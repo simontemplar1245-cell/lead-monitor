@@ -1,0 +1,134 @@
+# =============================================================================
+# Lead Monitor - GitHub Actions Workflow
+# =============================================================================
+# Runs the full scan cycle every 30 minutes, completely free.
+# Also sends a daily digest at 9 AM UTC.
+#
+# SETUP:
+# 1. Go to your repo Settings > Secrets > Actions
+# 2. Add these secrets:
+#    - REDDIT_CLIENT_ID
+#    - REDDIT_CLIENT_SECRET
+#    - REDDIT_USERNAME
+#    - REDDIT_PASSWORD
+#    - ANTHROPIC_API_KEY
+#    - TELEGRAM_BOT_TOKEN
+#    - TELEGRAM_CHAT_ID
+
+name: Lead Monitor
+
+on:
+  schedule:
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
+    # Daily digest at 9 AM UTC (adjust to your timezone)
+    - cron: '0 9 * * *'
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scan mode'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - reddit
+          - forums
+          - hn
+          - bluesky
+          - digest
+          - test
+
+# Prevent multiple scans from running simultaneously
+concurrency:
+  group: lead-monitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          # Install Playwright browser (only if forums are enabled)
+          playwright install chromium --with-deps || true
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      # Download database from previous run (persistence across runs)
+      - name: Download database artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: lead-monitor-db
+          path: data/
+          if_no_artifact_found: warn
+          workflow_conclusion: ''
+        continue-on-error: true
+
+      # Determine scan mode
+      - name: Determine mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "0 9 * * *" ]; then
+            echo "mode=digest" >> $GITHUB_OUTPUT
+          else
+            echo "mode=full" >> $GITHUB_OUTPUT
+          fi
+
+      # Run the scan
+      - name: Run Lead Monitor
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          MODE="${{ steps.mode.outputs.mode }}"
+          case "$MODE" in
+            reddit)   python main.py --reddit ;;
+            forums)   python main.py --forums ;;
+            hn)       python main.py --hn ;;
+            bluesky)  python main.py --bluesky ;;
+            digest)   python main.py --digest ;;
+            test)     python main.py --test ;;
+            *)        python main.py ;;
+          esac
+
+      # Upload database for next run (persistence)
+      - name: Upload database artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lead-monitor-db
+          path: data/leads.db
+          retention-days: 90
+          overwrite: true
+
+      # Upload logs for debugging
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scan-logs-${{ github.run_id }}
+          path: data/monitor.log
+          retention-days: 7

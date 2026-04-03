@@ -1,0 +1,39 @@
+# Environment variables (NEVER commit these)
+.env
+
+# Database files (contain lead data, regenerated on each run)
+data/leads.db
+data/leads.db-journal
+
+# Log files
+data/monitor.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright browsers (large, downloaded at runtime)
+playwright-browsers/

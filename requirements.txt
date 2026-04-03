@@ -1,0 +1,20 @@
+# Core dependencies
+praw==7.8.1                  # Reddit API wrapper
+anthropic==0.42.0            # Claude API client
+python-dotenv==1.0.1         # Load .env files
+requests==2.32.3             # HTTP requests
+beautifulsoup4==4.12.3       # HTML parsing for forums
+lxml==5.3.0                  # Fast HTML parser backend
+
+# Playwright for JS-heavy sites (Dentaltown, Alignable)
+playwright==1.49.1
+
+# Dashboard
+streamlit==1.41.1            # Web dashboard
+
+# Telegram notifications
+python-telegram-bot==21.9    # Telegram bot API
+
+# Utilities
+schedule==1.2.2              # Job scheduling (for local runs)
+python-dateutil==2.9.0       # Date parsing
