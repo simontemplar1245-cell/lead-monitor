@@ -4,16 +4,14 @@
 # Runs the full scan cycle every 30 minutes, completely free.
 # Also sends a daily digest at 9 AM UTC.
 #
-# SETUP:
-# 1. Go to your repo Settings > Secrets > Actions
-# 2. Add these secrets:
-#    - REDDIT_CLIENT_ID
-#    - REDDIT_CLIENT_SECRET
-#    - REDDIT_USERNAME
-#    - REDDIT_PASSWORD
-#    - ANTHROPIC_API_KEY
-#    - TELEGRAM_BOT_TOKEN
-#    - TELEGRAM_CHAT_ID
+# SETUP - only 3 secrets needed:
+# Go to repo Settings > Secrets and variables > Actions > New repository secret
+#
+#   ANTHROPIC_API_KEY  - from console.anthropic.com/settings/keys
+#   TELEGRAM_BOT_TOKEN - from @BotFather on Telegram
+#   TELEGRAM_CHAT_ID   - your Telegram chat ID (see README)
+#
+# Reddit needs NO secrets - uses public JSON endpoints.
 
 name: Lead Monitor
 
@@ -21,10 +19,10 @@ on:
   schedule:
     # Run every 30 minutes
     - cron: '*/30 * * * *'
-    # Daily digest at 9 AM UTC (adjust to your timezone)
+    # Daily digest at 9 AM UTC
     - cron: '0 9 * * *'
 
-  # Allow manual trigger from GitHub UI
+  # Allow manual trigger from GitHub UI (Actions tab > Run workflow)
   workflow_dispatch:
     inputs:
       mode:
@@ -41,7 +39,7 @@ on:
           - digest
           - test
 
-# Prevent multiple scans from running simultaneously
+# Prevent multiple scans running at once
 concurrency:
   group: lead-monitor
   cancel-in-progress: false
@@ -64,13 +62,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          # Install Playwright browser (only if forums are enabled)
           playwright install chromium --with-deps || true
 
       - name: Create data directory
         run: mkdir -p data
 
-      # Download database from previous run (persistence across runs)
+      # Download database from previous run (keeps leads across runs)
       - name: Download database artifact
         uses: dawidd6/action-download-artifact@v6
         with:
@@ -92,13 +89,9 @@ jobs:
             echo "mode=full" >> $GITHUB_OUTPUT
           fi
 
-      # Run the scan
+      # Run the scan (only 3 secrets needed now)
       - name: Run Lead Monitor
         env:
-          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
-          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -114,7 +107,7 @@ jobs:
             *)        python main.py ;;
           esac
 
-      # Upload database for next run (persistence)
+      # Save database for next run
       - name: Upload database artifact
         uses: actions/upload-artifact@v4
         if: always()
@@ -124,7 +117,7 @@ jobs:
           retention-days: 90
           overwrite: true
 
-      # Upload logs for debugging
+      # Save logs for debugging
       - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always()

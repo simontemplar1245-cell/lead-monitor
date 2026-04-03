@@ -17,10 +17,8 @@ load_dotenv()
 # =============================================================================
 # API KEYS (loaded from .env file - NEVER hardcode these)
 # =============================================================================
-REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
-REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
-REDDIT_USERNAME = os.getenv("REDDIT_USERNAME", "")
-REDDIT_PASSWORD = os.getenv("REDDIT_PASSWORD", "")
+# Reddit uses public JSON endpoints - no API key or account needed
+# Just needs a descriptive User-Agent string (Reddit requires this)
 REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "LeadMonitor/1.0 by AdvanceAIServices")
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
