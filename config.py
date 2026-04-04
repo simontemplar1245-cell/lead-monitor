@@ -53,26 +53,36 @@ SUBREDDITS = {
     # TIER 1: HIDDEN GEMS (Primary targets - check every scan)
     # =========================================================================
     "tier1": [
-        # Trades / Blue-collar businesses (PERFECT for AI receptionist)
+        # Trades / Blue-collar (PERFECT for AI receptionist - "can't answer on the job")
         "sweatystartup",       # ~118k - blue collar entrepreneurs, miss calls on jobs
-        "pressurewashing",     # ~29k - small biz owners, very niche
+        "pressurewashing",     # ~53k - owner-operators, phone/dispatch pain
+        "WindowCleaning",      # ~9k - "on a ladder can't answer" phrasing
+        "CarpetCleaning",      # ~9k - high owner density, service admin burden
+        "cleaningbusiness",    # ~5k - niche but almost all owners
+        "PoolPros",            # ~4k - route work + scheduling = missed calls
         "lawncare",            # ~680k - mix but many biz owners, seasonal call spikes
-        "Roofing",             # ~15k - contractors missing calls on roofs
-        "CleaningService",     # ~5k - cleaning biz owners, scheduling problems
-        "HomeImprovement",     # large but has contractor discussions
+        "Roofing",             # ~152k - contractors, strict anti-spam but good for monitoring
+        "Locksmith",           # ~35k - mobile trade, miss calls on jobs
 
         # Dental
         "Dentistry",           # ~130k - practice owners, front desk problems
 
         # Legal
         "Lawyertalk",          # ~65k - solo/small firm lawyers, intake problems
-        "LawFirm",            # smaller, business-of-law focused
+        "LawFirm",            # ~99k - explicitly for practice operations
 
         # Insurance
         "InsuranceAgent",      # ~10k - tiny but perfectly targeted
 
         # Real Estate
         "realtors",            # ~92k - agents, lead response anxiety
+        "RealEstateTechnology", # ~49k - tools/process discussions, chatbot/lead response
+
+        # Property Management (NEW from research - strong "maintenance calls" pain)
+        "PropertyManagement",  # ~43k - "maintenance calls", "tenant comms", "after-hours"
+
+        # Mortgage/Lending (NEW from research - phone-heavy pipeline)
+        "loanoriginators",     # ~30k - professionals discussing pipelines, leads, operations
 
         # Salon/Beauty
         "hairstylist",         # ~11k - solo stylists, missed booking calls
@@ -92,7 +102,7 @@ SUBREDDITS = {
 
         # Business/Entrepreneur (targeted searches only)
         "smallbusiness",       # ~1.5M - large, competitive but high volume
-        "Entrepreneur",        # ~5.1M - very large, lots of noise
+        "Entrepreneur",        # ~5.1M - very large, noise but high volume
 
         # E-commerce (chatbot buyers)
         "ecommerce",           # ~200k - store owners needing chat support
@@ -101,13 +111,20 @@ SUBREDDITS = {
         # Accounting (seasonal pain)
         "Accounting",          # ~468k - tax season call overload
 
-        # Veterinary
-        "Veterinary",          # ~20k - vet practice owners
+        # Veterinary (NEW from research - staffing/burnout/ops discussions)
+        "veterinaryprofession", # ~29k - pros discuss staffing, operational bottlenecks
         "VetTech",             # ~30k - some practice management discussion
 
         # Medical/Health practices
-        "Optometry",           # ~15k - practice owners
-        "physicaltherapy",     # ~50k - clinic owners
+        "optometry",           # ~25k - practice workflow, front desk themes
+        "physicaltherapy",     # ~94k - clinic owners, intake/front desk pain
+        "Chiropractic",        # ~89k - practice management, front desk topics
+
+        # Commercial Real Estate (NEW from research - leasing calls, ops)
+        "CommercialRealEstate", # ~123k - investors/operators, leasing/vendor discussions
+
+        # Pest Control (NEW from research - industry language mining)
+        "pestcontrol",         # ~94k - consumer-heavy but industry discussions exist
     ],
 
     # =========================================================================
@@ -147,6 +164,7 @@ PAIN_KEYWORDS = {
         "cannot answer the phone",
         "phone keeps ringing",
         "phone ringing",
+        "phone ringing off the hook",
         "too busy to answer",
         "calls go to voicemail",
         "going to voicemail",
@@ -158,8 +176,10 @@ PAIN_KEYWORDS = {
         "phone coverage",
         "after hours calls",
         "after-hours calls",
+        "after-hours call management",
         "nights and weekends",
         "emergency calls after hours",
+        "emergency maintenance line",
         "weekend calls",
         "lost the job because",
         "customer went to competitor",
@@ -167,6 +187,17 @@ PAIN_KEYWORDS = {
         "lost a customer because",
         "losing customers because",
         "didn't answer in time",
+        # Field-service specific (from research - operators in the field)
+        "can't get back to",
+        "missed a booking",
+        "lost the booking",
+        "call back backlog",
+        "in the field can't answer",
+        "on a ladder",
+        "hands full",
+        "driving between jobs",
+        "call overflow",
+        "too many inbound calls",
     ],
 
     # =========================================================================
@@ -177,12 +208,14 @@ PAIN_KEYWORDS = {
         "receptionist left",
         "front desk quit",
         "front desk left",
+        "front office",
         "need a receptionist",
         "hire a receptionist",
         "hiring a receptionist",
         "can't afford a receptionist",
         "can not afford a receptionist",
         "cannot afford a receptionist",
+        "can't hire front desk",
         "receptionist too expensive",
         "covering the phones myself",
         "answering service",
@@ -192,9 +225,19 @@ PAIN_KEYWORDS = {
         "need someone to answer",
         "office manager quit",
         "front desk coverage",
+        "front desk overload",
         "no front desk",
         "solo practice phone",
         "one person office",
+        # Intake-specific (from research - legal, medical, vet)
+        "intake",
+        "new patient intake",
+        "client intake",
+        "lead intake",
+        "intake coordinator",
+        "intake calls",
+        "call triage",
+        "phone triage",
     ],
 
     # =========================================================================
@@ -204,15 +247,23 @@ PAIN_KEYWORDS = {
         "missed appointment",
         "no-shows",
         "no shows",
+        "no-show rate",
+        "late cancellations",
         "booking system",
         "appointment booking",
+        "appointment reminders",
         "scheduling nightmare",
         "scheduling chaos",
+        "schedule is slammed",
+        "calendar is a mess",
         "double booked",
+        "double-booked",
+        "overbooked",
         "overbooking",
         "can't keep up with bookings",
         "too many appointment requests",
         "clients can't book",
+        "reschedule backlog",
     ],
 
     # =========================================================================
@@ -254,6 +305,43 @@ PAIN_KEYWORDS = {
         "prospect called but",
         "potential client called",
         "inquiry went unanswered",
+    ],
+
+    # =========================================================================
+    # SCALING / STAFFING PAIN
+    # =========================================================================
+    # =========================================================================
+    # INDUSTRY-SPECIFIC OPERATIONS (from deep research - operators use
+    # role/workflow terms, not "AI" terms. These are high-signal when
+    # they co-occur with missed calls/overwhelmed phrases)
+    # =========================================================================
+    "industry_specific": [
+        # Dental/clinic ops
+        "insurance verification",
+        "benefits verification",
+        "new patient calls",
+        "patient recall",
+        "reactivation",
+        # Veterinary ops
+        "client service representative",
+        "curbside",
+        "triage calls",
+        # Auto repair shop ops
+        "service advisor",
+        "service writer",
+        "estimate approval",
+        "authorise the estimate",
+        "authorize the estimate",
+        "repair order",
+        "status update calls",
+        "vehicle ready call",
+        # Property management ops
+        "maintenance requests",
+        "work order",
+        "leasing calls",
+        "rental inquiries",
+        "tenant portal",
+        "after-hours maintenance",
     ],
 
     # =========================================================================
@@ -350,6 +438,34 @@ FORUMS = {
         "scraper": "beautifulsoup",
         "enabled": True,
         "description": "Independent insurance agent forum, tech section",
+    },
+    # NEW FORUMS FROM RESEARCH
+    "optiboard": {
+        "name": "OptiBoard",
+        "base_url": "https://www.optiboard.com",
+        "forum_url": "https://www.optiboard.com/forums",
+        "type": "optometry",
+        "scraper": "beautifulsoup",
+        "enabled": True,
+        "description": "Optometry professionals, practice management areas",
+    },
+    "autoshopowner": {
+        "name": "AutoShopOwner",
+        "base_url": "https://www.autoshopowner.com",
+        "forum_url": "https://www.autoshopowner.com/forums/",
+        "type": "auto_repair",
+        "scraper": "beautifulsoup",
+        "enabled": True,
+        "description": "Auto repair shop management - staffing, customer comms, operations",
+    },
+    "physicaltherapist": {
+        "name": "PhysicalTherapist.com",
+        "base_url": "https://www.physicaltherapist.com",
+        "forum_url": "https://www.physicaltherapist.com",
+        "type": "healthcare",
+        "scraper": "beautifulsoup",
+        "enabled": True,
+        "description": "Open PT forum - clinic owners discuss intake, scheduling, staffing",
     },
 }
 
