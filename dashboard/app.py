@@ -90,6 +90,10 @@ st.sidebar.markdown(
 st.title("📊 Lead Monitor Dashboard")
 
 stats = db.get_stats_summary(days=time_range)
+# Handle None values from empty database (SUM on empty set returns None)
+for key in stats:
+    if stats[key] is None:
+        stats[key] = 0
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -264,6 +268,11 @@ with tab_funnel:
     st.subheader("Conversion Funnel")
 
     funnel = db.get_conversion_funnel(days=time_range)
+    # Handle None values from empty database
+    if funnel:
+        for key in funnel:
+            if funnel[key] is None:
+                funnel[key] = 0
 
     if funnel and funnel.get("total_leads", 0) > 0:
         total = funnel.get("total_leads", 0)
