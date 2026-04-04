@@ -23,8 +23,8 @@ REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "LeadMonitor/1.0 by AdvanceAI
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh")
 
 # =============================================================================
 # SCANNING SCHEDULE
@@ -549,53 +549,53 @@ IMPORTANT RULES FOR SUGGESTED REPLIES:
 """
 
 # =============================================================================
-# TELEGRAM MESSAGE TEMPLATES
+# NTFY.SH MESSAGE TEMPLATES (plain text - ntfy doesn't use markdown)
 # =============================================================================
-HOT_ALERT_TEMPLATE = """🔥 *HOT LEAD DETECTED*
+HOT_ALERT_TEMPLATE = """HOT LEAD DETECTED
 
-*Platform:* {platform}
-*Community:* {community}
-*Score:* {score}/1.0
-*Category:* {category}
+Platform: {platform}
+Community: {community}
+Score: {score}/1.0
+Category: {category}
 
-*Post:*
+Post:
 {post_text}
 
-*Link:* {post_url}
+Link: {post_url}
 
-*Suggested Reply:*
-_{suggested_reply}_
+Suggested Reply:
+{suggested_reply}
 
-*Reasoning:* {reasoning}
+Reasoning: {reasoning}
 
-⏰ Posted: {time_ago}
+Posted: {time_ago}
 """
 
-WARM_DIGEST_TEMPLATE = """⚡ *WARM LEAD*
+WARM_DIGEST_TEMPLATE = """WARM LEAD
 
-*Platform:* {platform}
-*Community:* {community}
-*Score:* {score}/1.0
+Platform: {platform}
+Community: {community}
+Score: {score}/1.0
 
-*Post:* {post_text_short}
-*Link:* {post_url}
+Post: {post_text_short}
+Link: {post_url}
 
-*Suggested Reply:*
-_{suggested_reply}_
+Suggested Reply:
+{suggested_reply}
 """
 
-DAILY_DIGEST_TEMPLATE = """📊 *DAILY LEAD DIGEST*
+DAILY_DIGEST_TEMPLATE = """DAILY LEAD DIGEST
 
-*Today's Summary:*
-🔥 HOT leads: {hot_count}
-⚡ WARM leads: {warm_count}
-❄️ COLD filtered: {cold_count}
+Today's Summary:
+HOT leads: {hot_count}
+WARM leads: {warm_count}
+COLD filtered: {cold_count}
 
-*Top Sources:*
+Top Sources:
 {top_sources}
 
-*System Status:* ✅ All scrapers running
-*Next scan:* ~30 minutes
+System Status: All scrapers running
+Next scan: ~30 minutes
 """
 
 # =============================================================================

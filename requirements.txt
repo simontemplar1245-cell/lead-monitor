@@ -11,8 +11,7 @@ playwright==1.49.1
 # Dashboard
 streamlit==1.41.1            # Web dashboard
 
-# Telegram notifications
-python-telegram-bot==21.9    # Telegram bot API
+# Notifications: ntfy.sh (uses requests - no extra dependency needed)
 
 # Utilities
 schedule==1.2.2              # Job scheduling (for local runs)

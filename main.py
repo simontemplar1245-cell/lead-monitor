@@ -6,7 +6,7 @@ Orchestrates the full scanning pipeline:
 2. Pre-filter with keywords
 3. Classify with Claude Haiku
 4. Save to database
-5. Send Telegram alerts for HOT leads
+5. Send ntfy.sh push notifications for HOT leads
 
 Usage:
   python main.py              # Run a full scan cycle
@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import LOG_LEVEL, LOG_FILE, DATABASE_PATH, HOT_THRESHOLD, WARM_THRESHOLD
 from core.database import LeadDatabase
 from core.classifier import LeadClassifier
-from core.notifier import TelegramNotifier
+from core.notifier import NtfyNotifier
 
 # =============================================================================
 # LOGGING SETUP
@@ -50,7 +50,7 @@ logger = logging.getLogger("lead_monitor")
 
 
 def run_reddit_scan(db: LeadDatabase, classifier: LeadClassifier,
-                    notifier: TelegramNotifier, test_mode: bool = False) -> dict:
+                    notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """Run Reddit scraper across all target subreddits."""
     from scrapers.reddit_scraper import RedditScraper
 
@@ -122,7 +122,7 @@ def run_reddit_scan(db: LeadDatabase, classifier: LeadClassifier,
 
 
 def run_forum_scan(db: LeadDatabase, classifier: LeadClassifier,
-                   notifier: TelegramNotifier, test_mode: bool = False) -> dict:
+                   notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """Run forum scrapers (Dentaltown, ContractorTalk, etc.)."""
     from scrapers.forum_scraper import ForumScraper
 
@@ -184,7 +184,7 @@ def run_forum_scan(db: LeadDatabase, classifier: LeadClassifier,
 
 
 def run_hackernews_scan(db: LeadDatabase, classifier: LeadClassifier,
-                        notifier: TelegramNotifier, test_mode: bool = False) -> dict:
+                        notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """Run Hacker News scraper."""
     from scrapers.hackernews_scraper import HackerNewsScraper
 
@@ -246,7 +246,7 @@ def run_hackernews_scan(db: LeadDatabase, classifier: LeadClassifier,
 
 
 def run_bluesky_scan(db: LeadDatabase, classifier: LeadClassifier,
-                     notifier: TelegramNotifier, test_mode: bool = False) -> dict:
+                     notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """Run Bluesky scraper."""
     from scrapers.bluesky_scraper import BlueskyScraper
 
@@ -320,7 +320,7 @@ def run_full_scan(test_mode: bool = False):
     # Initialize core components
     db = LeadDatabase(DATABASE_PATH)
     classifier = LeadClassifier()
-    notifier = TelegramNotifier()
+    notifier = NtfyNotifier()
 
     # Run all scrapers
     all_stats = {}
@@ -361,9 +361,9 @@ def run_full_scan(test_mode: bool = False):
 
 
 def send_daily_digest():
-    """Send the daily summary digest via Telegram."""
+    """Send the daily summary digest via ntfy.sh."""
     db = LeadDatabase(DATABASE_PATH)
-    notifier = TelegramNotifier()
+    notifier = NtfyNotifier()
 
     stats = db.get_stats_summary(days=1)
     sources = db.get_platform_stats(days=1)
@@ -391,7 +391,7 @@ def main():
     if any([args.reddit, args.forums, args.hn, args.bluesky]):
         db = LeadDatabase(DATABASE_PATH)
         classifier = LeadClassifier()
-        notifier = TelegramNotifier()
+        notifier = NtfyNotifier()
 
         if args.reddit:
             run_reddit_scan(db, classifier, notifier, args.test)

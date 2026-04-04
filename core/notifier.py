@@ -1,17 +1,24 @@
 """
-Telegram Notification System
+ntfy.sh Notification System
 =============================
-Sends instant alerts for HOT leads and daily digests for WARM leads.
+Sends instant push notifications for HOT leads and daily digests.
+Uses ntfy.sh - free, no account needed, works over WiFi/data anywhere.
+
+Setup:
+  1. Install the ntfy app on your phone (iOS / Android)
+  2. Subscribe to your topic (e.g. "advance-ai-leads")
+  3. Set NTFY_TOPIC in .env or GitHub Secrets
+  4. Done - notifications arrive instantly
 """
 
 import logging
-import asyncio
-from datetime import datetime, timedelta
+import requests
+from datetime import datetime
 from typing import Optional
 
 from config import (
-    TELEGRAM_BOT_TOKEN,
-    TELEGRAM_CHAT_ID,
+    NTFY_TOPIC,
+    NTFY_SERVER,
     HOT_ALERT_TEMPLATE,
     WARM_DIGEST_TEMPLATE,
     DAILY_DIGEST_TEMPLATE,
@@ -20,78 +27,60 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
-class TelegramNotifier:
-    """Sends lead alerts via Telegram bot."""
+class NtfyNotifier:
+    """Sends lead alerts via ntfy.sh push notifications."""
 
     def __init__(self):
-        self.bot_token = TELEGRAM_BOT_TOKEN
-        self.chat_id = TELEGRAM_CHAT_ID
-        self.enabled = bool(self.bot_token and self.chat_id)
+        self.topic = NTFY_TOPIC
+        self.server = NTFY_SERVER.rstrip("/")
+        self.enabled = bool(self.topic)
 
         if not self.enabled:
             logger.warning(
-                "Telegram notifications disabled - "
-                "set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env"
+                "ntfy.sh notifications disabled - "
+                "set NTFY_TOPIC in .env (e.g. NTFY_TOPIC=advance-ai-leads)"
             )
 
-    async def _send_message_async(self, text: str, parse_mode: str = "Markdown") -> bool:
-        """Send a message via Telegram Bot API using python-telegram-bot."""
+    def send_message(self, text: str, title: str = "Lead Monitor",
+                     priority: int = 3, tags: str = "") -> bool:
+        """
+        Send a push notification via ntfy.sh.
+
+        Priority levels:
+          1 = min, 2 = low, 3 = default, 4 = high, 5 = urgent
+
+        Tags are emoji shortcodes, e.g. "fire" shows a fire emoji.
+        """
         if not self.enabled:
-            logger.info(f"[DRY RUN] Would send Telegram message: {text[:100]}...")
+            logger.info(f"[DRY RUN] Would send ntfy message: {title} - {text[:100]}...")
             return False
 
+        url = f"{self.server}/{self.topic}"
+
+        headers = {
+            "Title": title,
+            "Priority": str(priority),
+        }
+
+        if tags:
+            headers["Tags"] = tags
+
+        # Truncate if too long (ntfy has 4096 byte limit for message body)
+        if len(text) > 3900:
+            text = text[:3897] + "..."
+
         try:
-            from telegram import Bot
-
-            bot = Bot(token=self.bot_token)
-            # Truncate if too long for Telegram (max 4096 chars)
-            if len(text) > 4000:
-                text = text[:3997] + "..."
-
-            await bot.send_message(
-                chat_id=self.chat_id,
-                text=text,
-                parse_mode=parse_mode,
-                disable_web_page_preview=True,
-            )
-            logger.info("Telegram message sent successfully")
+            response = requests.post(url, data=text.encode("utf-8"), headers=headers, timeout=15)
+            response.raise_for_status()
+            logger.info(f"ntfy notification sent: {title}")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
-            # Try without markdown formatting if it failed
-            try:
-                await bot.send_message(
-                    chat_id=self.chat_id,
-                    text=text,
-                    disable_web_page_preview=True,
-                )
-                return True
-            except Exception as e2:
-                logger.error(f"Telegram retry also failed: {e2}")
-                return False
-
-    def send_message(self, text: str, parse_mode: str = "Markdown") -> bool:
-        """Synchronous wrapper for sending messages."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If already in an async context, create a task
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(
-                        asyncio.run,
-                        self._send_message_async(text, parse_mode)
-                    )
-                    return future.result(timeout=30)
-            else:
-                return asyncio.run(self._send_message_async(text, parse_mode))
-        except Exception as e:
-            logger.error(f"Send message error: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send ntfy notification: {e}")
             return False
 
     def send_hot_alert(self, lead_data: dict) -> bool:
-        """Send an instant alert for a HOT lead."""
+        """Send an urgent push notification for a HOT lead."""
         # Calculate time ago
         post_time = lead_data.get("post_created_at", "")
         if post_time:
@@ -109,15 +98,10 @@ class TelegramNotifier:
         else:
             time_ago = "Just now"
 
-        # Truncate post text for Telegram
+        # Truncate post text
         post_text = lead_data.get("body", lead_data.get("title", ""))
         if len(post_text) > 500:
             post_text = post_text[:497] + "..."
-
-        # Escape markdown special chars in user content
-        post_text = self._escape_markdown(post_text)
-        suggested = self._escape_markdown(lead_data.get("suggested_reply", ""))
-        reasoning = self._escape_markdown(lead_data.get("reasoning", ""))
 
         message = HOT_ALERT_TEMPLATE.format(
             platform=lead_data.get("platform", "Unknown"),
@@ -126,8 +110,8 @@ class TelegramNotifier:
             category=lead_data.get("category", "HOT"),
             post_text=post_text,
             post_url=lead_data.get("url", ""),
-            suggested_reply=suggested,
-            reasoning=reasoning,
+            suggested_reply=lead_data.get("suggested_reply", ""),
+            reasoning=lead_data.get("reasoning", ""),
             time_ago=time_ago,
         )
 
@@ -135,16 +119,19 @@ class TelegramNotifier:
             f"Sending HOT alert: {lead_data.get('platform')}/{lead_data.get('community')} "
             f"- score {lead_data.get('score', 0):.2f}"
         )
-        return self.send_message(message)
+
+        return self.send_message(
+            text=message,
+            title=f"HOT LEAD - {lead_data.get('platform', '')}/{lead_data.get('community', '')}",
+            priority=5,  # urgent - makes phone ring/vibrate
+            tags="fire",
+        )
 
     def send_warm_alert(self, lead_data: dict) -> bool:
-        """Send alert for a WARM lead (less urgent formatting)."""
+        """Send a notification for a WARM lead (lower priority)."""
         post_text = lead_data.get("body", lead_data.get("title", ""))
         if len(post_text) > 200:
             post_text = post_text[:197] + "..."
-
-        post_text = self._escape_markdown(post_text)
-        suggested = self._escape_markdown(lead_data.get("suggested_reply", ""))
 
         message = WARM_DIGEST_TEMPLATE.format(
             platform=lead_data.get("platform", "Unknown"),
@@ -152,13 +139,18 @@ class TelegramNotifier:
             score=f"{lead_data.get('score', 0):.2f}",
             post_text_short=post_text,
             post_url=lead_data.get("url", ""),
-            suggested_reply=suggested,
+            suggested_reply=lead_data.get("suggested_reply", ""),
         )
 
-        return self.send_message(message)
+        return self.send_message(
+            text=message,
+            title=f"Warm Lead - {lead_data.get('platform', '')}/{lead_data.get('community', '')}",
+            priority=3,  # default priority
+            tags="zap",
+        )
 
     def send_daily_digest(self, stats: dict, top_sources: list) -> bool:
-        """Send a daily summary digest."""
+        """Send the daily summary digest."""
         sources_text = ""
         for src in top_sources[:5]:
             sources_text += f"  {src['community']}: {src['total']} leads ({src.get('hot', 0)} hot)\n"
@@ -173,23 +165,20 @@ class TelegramNotifier:
             top_sources=sources_text,
         )
 
-        return self.send_message(message)
+        return self.send_message(
+            text=message,
+            title="Daily Lead Digest",
+            priority=3,
+            tags="chart_with_upwards_trend",
+        )
 
     def send_error_alert(self, error_message: str) -> bool:
         """Send an alert when something goes wrong with the system."""
-        message = (
-            f"System Alert\n\n"
-            f"Error: {self._escape_markdown(error_message)}\n\n"
-            f"Check the dashboard for details."
-        )
-        return self.send_message(message)
+        message = f"Error: {error_message}\n\nCheck the dashboard for details."
 
-    @staticmethod
-    def _escape_markdown(text: str) -> str:
-        """Escape Markdown special characters for Telegram."""
-        if not text:
-            return ""
-        # Only escape characters that break Telegram Markdown v1
-        for char in ['_', '*', '[', ']', '`']:
-            text = text.replace(char, f'\\{char}')
-        return text
+        return self.send_message(
+            text=message,
+            title="Lead Monitor - System Error",
+            priority=4,  # high priority for errors
+            tags="warning",
+        )

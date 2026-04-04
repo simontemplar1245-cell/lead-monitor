@@ -4,14 +4,14 @@
 # Runs the full scan cycle every 30 minutes, completely free.
 # Also sends a daily digest at 9 AM UTC.
 #
-# SETUP - only 3 secrets needed:
+# SETUP - only 2 secrets needed:
 # Go to repo Settings > Secrets and variables > Actions > New repository secret
 #
 #   ANTHROPIC_API_KEY  - from console.anthropic.com/settings/keys
-#   TELEGRAM_BOT_TOKEN - from @BotFather on Telegram
-#   TELEGRAM_CHAT_ID   - your Telegram chat ID (see README)
+#   NTFY_TOPIC         - your ntfy.sh topic name (e.g. advance-ai-leads)
 #
 # Reddit needs NO secrets - uses public JSON endpoints.
+# ntfy.sh needs NO account - just the topic name you subscribed to in the app.
 
 name: Lead Monitor
 
@@ -89,12 +89,11 @@ jobs:
             echo "mode=full" >> $GITHUB_OUTPUT
           fi
 
-      # Run the scan (only 3 secrets needed now)
+      # Run the scan (only 2 secrets needed)
       - name: Run Lead Monitor
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
           case "$MODE" in
