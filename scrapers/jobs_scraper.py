@@ -31,9 +31,19 @@ class JobsScraper:
         self.sites = JOBS.get("sites", ["indeed", "zip_recruiter"])
         self.search_terms = JOBS.get("search_terms", ["receptionist"])
         self.locations = JOBS.get("locations", ["United States"])
-        self.hours_old = JOBS.get("hours_old", 48)
-        self.results_per_search = JOBS.get("results_per_search", 20)
+        self.hours_old = JOBS.get("hours_old", 720)
+        self.results_per_search = JOBS.get("results_per_search", 15)
+        self.strict_remote_only = JOBS.get("strict_remote_only", True)
         self.exclude_titles = [t.lower() for t in JOBS.get("exclude_titles", [])]
+        self.exclude_companies = [c.lower() for c in JOBS.get("exclude_companies", [])]
+
+        # Tokens in title that indicate the role is actually phone/virtual
+        # even when is_remote field lies. AI can replace any of these.
+        self._remote_title_tokens = (
+            "remote", "virtual", "work from home", "work-from-home",
+            "wfh", "telephone", "phone-based", "phone only",
+            "call center", "home based", "home-based",
+        )
 
         # Lazy-import jobspy so the rest of the system still works if the
         # package isn't installed (e.g., during minimal CI runs).
@@ -84,6 +94,7 @@ class JobsScraper:
                 results_wanted=self.results_per_search,
                 hours_old=self.hours_old,
                 country_indeed=self._country_for_indeed(location),
+                is_remote=True,  # Hint - JobSpy doesn't strictly enforce
                 verbose=0,
             )
         except Exception as e:
@@ -105,15 +116,40 @@ class JobsScraper:
                 site = str(row.get("site", "") or "").strip()
                 location_str = str(row.get("location", "") or "").strip()
                 date_posted = row.get("date_posted", "")
+                is_remote_flag = bool(row.get("is_remote", False))
 
                 if not title or not company:
                     continue
 
+                title_lower = title.lower()
+                company_lower = company.lower()
+
+                # Exclude competitor answering-service companies - these ARE
+                # the players we're trying to displace. Hiring by them is
+                # not a lead, it's noise.
+                if any(bad in company_lower for bad in self.exclude_companies):
+                    logger.debug(f"Skipped competitor: {company}")
+                    continue
+
                 # Filter out senior/management roles - we want solo operators
                 # and SMB owners who would cold-buy an AI receptionist
-                title_lower = title.lower()
                 if any(bad in title_lower for bad in self.exclude_titles):
                     continue
+
+                # STRICT REMOTE FILTER: an AI receptionist can only replace
+                # virtual/phone roles, not physical front-desk workers who
+                # greet patients in person. Keep a job only if JobSpy
+                # confirmed is_remote=True OR the title literally says so.
+                if self.strict_remote_only:
+                    title_confirms_remote = any(
+                        tok in title_lower for tok in self._remote_title_tokens
+                    )
+                    desc_first_500 = description[:500].lower()
+                    desc_confirms_remote = any(
+                        tok in desc_first_500 for tok in self._remote_title_tokens
+                    )
+                    if not (is_remote_flag or title_confirms_remote or desc_confirms_remote):
+                        continue
 
                 # Build a stable unique ID for dedup
                 unique_key = f"job_{site}_{company}_{title}_{location_str}"

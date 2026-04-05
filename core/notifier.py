@@ -22,6 +22,7 @@ from config import (
     HOT_ALERT_TEMPLATE,
     WARM_DIGEST_TEMPLATE,
     DAILY_DIGEST_TEMPLATE,
+    JOB_ALERT_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,72 +80,151 @@ class NtfyNotifier:
             logger.error(f"Failed to send ntfy notification: {e}")
             return False
 
+    @staticmethod
+    def _format_time_ago(post_time: str) -> str:
+        """Humanize an ISO timestamp into 'X minutes/hours/days ago'."""
+        if not post_time:
+            return "Just now"
+        try:
+            dt = datetime.fromisoformat(str(post_time).replace("Z", "+00:00"))
+            diff = datetime.utcnow() - dt.replace(tzinfo=None)
+            secs = diff.total_seconds()
+            if secs < 60:
+                return "just now"
+            if secs < 3600:
+                return f"{int(secs / 60)} minutes ago"
+            if secs < 86400:
+                return f"{int(secs / 3600)} hours ago"
+            return f"{int(diff.days)} days ago"
+        except (ValueError, TypeError):
+            return "Unknown"
+
+    @staticmethod
+    def _extract_company_and_title(lead_data: dict) -> tuple:
+        """
+        Extract the 'who' and 'what' from a lead:
+          - company: the business / author / poster
+          - title:   the role or post title
+
+        Handles three lead shapes:
+          1. Job postings: author=Company, title=Role
+          2. Reddit/forum posts: author=username, title=post title
+          3. Bluesky/HN: author=handle, title may be empty (use body snippet)
+        """
+        platform = (lead_data.get("platform") or "").lower()
+        author = lead_data.get("author") or ""
+        title = lead_data.get("title") or ""
+
+        if platform == "jobs":
+            # JobsScraper sets author=company, title=role
+            return author or "Unknown company", title or "(no title)"
+
+        # For social posts, "company" slot = the poster / author
+        company = author or "Unknown poster"
+        if not title:
+            # fallback to first 80 chars of body
+            body = lead_data.get("body") or ""
+            title = body[:80] + ("..." if len(body) > 80 else "")
+        if not title:
+            title = "(no title)"
+        return company, title
+
     def send_hot_alert(self, lead_data: dict) -> bool:
         """Send an urgent push notification for a HOT lead."""
-        # Calculate time ago
-        post_time = lead_data.get("post_created_at", "")
-        if post_time:
-            try:
-                dt = datetime.fromisoformat(str(post_time).replace("Z", "+00:00"))
-                diff = datetime.utcnow() - dt.replace(tzinfo=None)
-                if diff.total_seconds() < 3600:
-                    time_ago = f"{int(diff.total_seconds() / 60)} minutes ago"
-                elif diff.total_seconds() < 86400:
-                    time_ago = f"{int(diff.total_seconds() / 3600)} hours ago"
-                else:
-                    time_ago = f"{int(diff.days)} days ago"
-            except (ValueError, TypeError):
-                time_ago = "Unknown"
-        else:
-            time_ago = "Just now"
+        time_ago = self._format_time_ago(lead_data.get("post_created_at", ""))
+        company, title = self._extract_company_and_title(lead_data)
 
-        # Truncate post text
         post_text = lead_data.get("body", lead_data.get("title", ""))
         if len(post_text) > 500:
             post_text = post_text[:497] + "..."
 
-        message = HOT_ALERT_TEMPLATE.format(
-            platform=lead_data.get("platform", "Unknown"),
-            community=lead_data.get("community", "Unknown"),
-            score=f"{lead_data.get('score', 0):.2f}",
-            category=lead_data.get("category", "HOT"),
-            post_text=post_text,
-            post_url=lead_data.get("url", ""),
-            suggested_reply=lead_data.get("suggested_reply", ""),
-            reasoning=lead_data.get("reasoning", ""),
-            time_ago=time_ago,
-        )
+        # Route job postings to the specialized template
+        platform = lead_data.get("platform", "").lower()
+        if platform == "jobs":
+            message = JOB_ALERT_TEMPLATE.format(
+                category=lead_data.get("category", "HOT"),
+                company=company,
+                title=title,
+                platform=lead_data.get("platform", "jobs"),
+                community=lead_data.get("community", "Unknown"),
+                time_ago=time_ago,
+                post_text=post_text,
+                suggested_reply=lead_data.get("suggested_reply", "")
+                                or "Reach out with a cost comparison: their role salary vs your monthly AI plan.",
+                post_url=lead_data.get("url", ""),
+            )
+            ntfy_title = f"HOT HIRING SIGNAL - {company[:40]}"
+        else:
+            message = HOT_ALERT_TEMPLATE.format(
+                company=company,
+                title=title,
+                platform=lead_data.get("platform", "Unknown"),
+                community=lead_data.get("community", "Unknown"),
+                score=f"{lead_data.get('score', 0):.2f}",
+                category=lead_data.get("category", "HOT"),
+                post_text=post_text,
+                post_url=lead_data.get("url", ""),
+                suggested_reply=lead_data.get("suggested_reply", ""),
+                reasoning=lead_data.get("reasoning", ""),
+                time_ago=time_ago,
+            )
+            ntfy_title = f"HOT LEAD - {company[:30]} | {lead_data.get('community', '')[:25]}"
 
         logger.info(
             f"Sending HOT alert: {lead_data.get('platform')}/{lead_data.get('community')} "
-            f"- score {lead_data.get('score', 0):.2f}"
+            f"- {company} - score {lead_data.get('score', 0):.2f}"
         )
 
         return self.send_message(
             text=message,
-            title=f"HOT LEAD - {lead_data.get('platform', '')}/{lead_data.get('community', '')}",
+            title=ntfy_title,
             priority=5,  # urgent - makes phone ring/vibrate
             tags="fire",
         )
 
     def send_warm_alert(self, lead_data: dict) -> bool:
         """Send a notification for a WARM lead (lower priority)."""
-        post_text = lead_data.get("body", lead_data.get("title", ""))
-        if len(post_text) > 200:
-            post_text = post_text[:197] + "..."
+        time_ago = self._format_time_ago(lead_data.get("post_created_at", ""))
+        company, title = self._extract_company_and_title(lead_data)
 
-        message = WARM_DIGEST_TEMPLATE.format(
-            platform=lead_data.get("platform", "Unknown"),
-            community=lead_data.get("community", "Unknown"),
-            score=f"{lead_data.get('score', 0):.2f}",
-            post_text_short=post_text,
-            post_url=lead_data.get("url", ""),
-            suggested_reply=lead_data.get("suggested_reply", ""),
-        )
+        post_text_short = lead_data.get("body", lead_data.get("title", ""))
+        if len(post_text_short) > 300:
+            post_text_short = post_text_short[:297] + "..."
+
+        # Route job postings to the specialized template
+        platform = lead_data.get("platform", "").lower()
+        if platform == "jobs":
+            message = JOB_ALERT_TEMPLATE.format(
+                category=lead_data.get("category", "WARM"),
+                company=company,
+                title=title,
+                platform=lead_data.get("platform", "jobs"),
+                community=lead_data.get("community", "Unknown"),
+                time_ago=time_ago,
+                post_text=post_text_short,
+                suggested_reply=lead_data.get("suggested_reply", "")
+                                or "Reach out with a cost comparison: their role salary vs your monthly AI plan.",
+                post_url=lead_data.get("url", ""),
+            )
+            ntfy_title = f"Hiring Signal - {company[:40]}"
+        else:
+            message = WARM_DIGEST_TEMPLATE.format(
+                company=company,
+                title=title,
+                platform=lead_data.get("platform", "Unknown"),
+                community=lead_data.get("community", "Unknown"),
+                score=f"{lead_data.get('score', 0):.2f}",
+                post_text_short=post_text_short,
+                post_url=lead_data.get("url", ""),
+                suggested_reply=lead_data.get("suggested_reply", ""),
+                reasoning=lead_data.get("reasoning", ""),
+                time_ago=time_ago,
+            )
+            ntfy_title = f"Warm Lead - {company[:30]} | {lead_data.get('community', '')[:25]}"
 
         return self.send_message(
             text=message,
-            title=f"Warm Lead - {lead_data.get('platform', '')}/{lead_data.get('community', '')}",
+            title=ntfy_title,
             priority=3,  # default priority
             tags="zap",
         )

@@ -125,6 +125,15 @@ SUBREDDITS = {
 
         # Pest Control (NEW from research - industry language mining)
         "pestcontrol",         # ~94k - consumer-heavy but industry discussions exist
+
+        # HIRING-SIDE SUBREDDITS (proven: businesses post [HIRING]
+        # chatbot / AI / virtual assistant requests here daily)
+        "forhire",             # ~710k - [HIRING] tag for client-side posts
+        "hireaprogrammer",     # ~48k - explicitly for hiring devs
+        "jobbit",              # ~23k - remote gigs, client-side heavy
+        "DoneDirtCheap",       # ~75k - quick gigs, some chatbot requests
+        "HireanIllustrator",   # ~11k - proof this subreddit pattern works
+        "slavelabour",         # ~365k - cheap gigs (use carefully)
     ],
 
     # =========================================================================
@@ -154,7 +163,6 @@ SUBREDDITS = {
         "privatepractice",     # healthcare private practices
         "DogGrooming",         # groomers, appointment-based
         "dogtraining",         # trainers, inquiry-heavy
-        "kitchenremodeling",   # contractors with long sales cycles
         "AskContractors",      # Q&A for contractors / owners
         "homeimprovement",     # mix of DIY + pro contractors
         "GeneralContractor",   # owner-operators
@@ -162,7 +170,7 @@ SUBREDDITS = {
         "Welding",             # mobile welders, miss calls on jobs
         "TowTruck",            # dispatchers, 24/7 call requirements
         "junkremoval",         # route-based, estimate calls
-        "movers",              # quote-heavy businesses
+        "Moving",              # movers community (replaces private r/movers)
         "selfstorage",         # facility owners, inquiry calls
         "notary",              # mobile notaries, appointment-based
     ]
@@ -559,7 +567,10 @@ HACKERNEWS = {
 # =============================================================================
 BLUESKY = {
     "enabled": True,
-    "api_url": "https://public.api.bsky.app",
+    # NOTE: public.api.bsky.app started returning 403 from some IP ranges
+    # in early 2026 - use the main api.bsky.app endpoint instead.
+    # Unauthenticated search still works here.
+    "api_url": "https://api.bsky.app",
     "keywords": [
         "need a chatbot",
         "AI receptionist",
@@ -586,23 +597,43 @@ BLUESKY = {
 JOBS = {
     "enabled": True,
     # Which boards to pull from (no auth needed for any of these)
-    "sites": ["indeed", "zip_recruiter", "glassdoor", "linkedin"],
-    # Search terms - hiring signals for reception / phone-answering roles
+    # NOTE: Glassdoor removed - its API returns 400 for generic location
+    # strings like "United States" and its location parser is broken.
+    # LinkedIn kept but tends to rate-limit aggressively so it adds little.
+    # Indeed is the workhorse - free, reliable, huge coverage, no auth.
+    "sites": ["indeed", "zip_recruiter", "linkedin"],
+
+    # STRATEGY UPDATE: An AI receptionist cannot replace a physical front
+    # desk worker (who greets patients, hands over paperwork, etc.). It CAN
+    # replace the purely phone/virtual side of reception. So we prioritise
+    # search terms for ROLES THAT ARE 100% PHONE / REMOTE / VIRTUAL, and
+    # we pass is_remote=True to JobSpy plus strict post-filtering to
+    # guarantee only AI-replaceable jobs survive into the lead list.
     "search_terms": [
-        "receptionist",
-        "front desk",
-        "front office receptionist",
-        "medical receptionist",
-        "dental receptionist",
-        "veterinary receptionist",
-        "legal receptionist",
+        # Tier A - pure phone/virtual roles (highest intent, 100% replaceable)
         "virtual receptionist",
-        "phone answering",
-        "appointment scheduler",
-        "patient coordinator",
-        "client intake",
-        "intake coordinator",
-        "customer service representative",
+        "remote receptionist",
+        "telephone receptionist",
+        "phone receptionist",
+        "call center representative remote",
+        "remote customer service",
+        "inbound call agent remote",
+        # Tier B - intake/scheduling roles (usually remote-friendly)
+        "appointment scheduler remote",
+        "remote intake coordinator",
+        "virtual assistant scheduler",
+        "remote patient access",
+        # Tier C - broader catch (requires remote flag to survive)
+        "remote receptionist part time",
+        "work from home receptionist",
+        # Tier D - CHATBOT-BUILD signals: businesses hiring someone to
+        # build a chatbot = businesses that want to BUY a chatbot solution.
+        # Same buyer intent from the opposite angle. Proven - these hit.
+        "chatbot developer",
+        "conversational AI developer",
+        "AI chatbot integration",
+        "voice AI developer",
+        "build chatbot contract",
     ],
     # Geographic focus - US/Canada/UK (English markets where we can sell)
     "locations": [
@@ -610,12 +641,17 @@ JOBS = {
         "Canada",
         "United Kingdom",
     ],
-    # How far back to look (hours). 48 covers between-scan gaps.
-    "hours_old": 48,
+    # Recency - Indeed doesn't always remove filled jobs, so fresher =
+    # higher chance the role is still open. 168h (7 days) is the sweet
+    # spot: recent enough most are still open, long enough to catch
+    # jobs posted over a weekend before Monday processing. Well within
+    # the hard cap of 720h (30 days) for the "no older than a month" rule.
+    "hours_old": 168,  # 7 days
     # Results per search term per location (keep small - avoid rate limits)
-    "results_per_search": 20,
-    # Minimum company size filter - we want SMBs, not enterprise
-    # (enterprises have procurement teams and can't be cold-pitched)
+    "results_per_search": 15,
+    # STRICT REMOTE FILTER: only keep jobs where JobSpy confirmed remote=True
+    # OR the title explicitly contains remote/virtual/phone language.
+    "strict_remote_only": True,
     # Titles we IGNORE (noise we don't want in the leads list)
     "exclude_titles": [
         "director",
@@ -624,6 +660,27 @@ JOBS = {
         "lead receptionist",
         "head of",
         "chief",
+        "senior",   # enterprise roles - have procurement, can't cold-pitch
+        "lead ",
+    ],
+    # Companies to EXCLUDE - these ARE the competitors we're trying to
+    # displace. Hiring by them is not a lead, it's a red flag.
+    "exclude_companies": [
+        "always on call",
+        "answerconnect",
+        "ruby receptionists",
+        "posh virtual receptionists",
+        "moneypenny",
+        "specialty answering service",
+        "answer 1",
+        "abby connect",
+        "smith.ai",
+        "nexa",
+        "davinci virtual",
+        "call ruby",
+        "conversational receptionists",
+        "map communications",
+        "answering service care",
     ],
 }
 
@@ -672,37 +729,71 @@ IMPORTANT RULES FOR SUGGESTED REPLIES:
 # =============================================================================
 # NTFY.SH MESSAGE TEMPLATES (plain text - ntfy doesn't use markdown)
 # =============================================================================
-HOT_ALERT_TEMPLATE = """HOT LEAD DETECTED
+# The notification IS the entire lead brief - user reads it, decides, taps link.
+# Every template includes: who (company/author), what (title/summary),
+# when (posted time), where (link), why (reasoning), and next step (suggested reply).
 
-Platform: {platform}
-Community: {community}
-Score: {score}/1.0
-Category: {category}
+HOT_ALERT_TEMPLATE = """🔥 HOT LEAD
 
-Post:
+WHO: {company}
+WHAT: {title}
+WHERE: {platform} / {community}
+WHEN: Posted {time_ago}
+SCORE: {score}/1.0
+
+SUMMARY:
 {post_text}
 
-Link: {post_url}
+WHY THIS IS A LEAD:
+{reasoning}
 
-Suggested Reply:
+SUGGESTED REPLY:
 {suggested_reply}
 
-Reasoning: {reasoning}
-
-Posted: {time_ago}
+🔗 OPEN: {post_url}
 """
 
-WARM_DIGEST_TEMPLATE = """WARM LEAD
+WARM_DIGEST_TEMPLATE = """⚡ WARM LEAD
 
-Platform: {platform}
-Community: {community}
-Score: {score}/1.0
+WHO: {company}
+WHAT: {title}
+WHERE: {platform} / {community}
+WHEN: Posted {time_ago}
+SCORE: {score}/1.0
 
-Post: {post_text_short}
-Link: {post_url}
+SUMMARY:
+{post_text_short}
 
-Suggested Reply:
+WHY: {reasoning}
+
+SUGGESTED REPLY:
 {suggested_reply}
+
+🔗 OPEN: {post_url}
+"""
+
+# Job postings get a specialized template since "author" = the hiring company,
+# "title" = the role, and there's no "reply" - you cold-pitch the company direct.
+JOB_ALERT_TEMPLATE = """💼 HIRING SIGNAL ({category})
+
+COMPANY: {company}
+ROLE: {title}
+SOURCE: {platform} / {community}
+POSTED: {time_ago}
+
+ROLE SUMMARY:
+{post_text}
+
+WHY THIS IS A LEAD:
+{company} is actively trying to hire someone to do phone/reception work.
+That's the exact job your AI receptionist does - for ~10% of the salary cost.
+They've already decided they need the function. Pitch them now before they
+hire a human.
+
+COLD-PITCH ANGLE:
+{suggested_reply}
+
+🔗 JOB POSTING: {post_url}
 """
 
 DAILY_DIGEST_TEMPLATE = """DAILY LEAD DIGEST

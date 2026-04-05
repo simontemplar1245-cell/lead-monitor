@@ -25,6 +25,13 @@ from config import (
     REDDIT_USER_AGENT,
 )
 
+# Skip posts with more than this many existing comments. Why?
+# Once a post has lots of replies, either (a) it's been fully answered
+# already, or (b) competing agencies have already replied and the OP's
+# attention has moved on. Fresh posts with <=5 comments are where we
+# actually have a chance of being the first helpful voice.
+MAX_COMMENTS_FOR_FRESH_POST = 5
+
 logger = logging.getLogger(__name__)
 
 REDDIT_JSON_URL = "https://www.reddit.com/r/{subreddit}/new.json"
@@ -120,6 +127,16 @@ class RedditScraper:
             title = post.get("title", "")
             selftext = post.get("selftext", "") or ""
             permalink = post.get("permalink", "")
+            num_comments = post.get("num_comments", 0)
+
+            # Skip already-answered posts. If >5 comments exist, competitors
+            # have probably already replied and OP's focus has moved on.
+            if num_comments > MAX_COMMENTS_FOR_FRESH_POST:
+                logger.debug(
+                    f"Skipping r/{subreddit_name}/{post_id} - already has "
+                    f"{num_comments} comments (probably answered)"
+                )
+                continue
 
             # Skip deleted posts
             if selftext in ("[deleted]", "[removed]"):
@@ -139,14 +156,9 @@ class RedditScraper:
                 "url": f"https://reddit.com{permalink}",
                 "post_created_at": post_time.isoformat(),
                 "post_score": post.get("score", 0),
-                "num_comments": post.get("num_comments", 0),
+                "num_comments": num_comments,
                 "type": "post",
             }
-
-            # Also check top-level comments on highly active posts
-            if post.get("num_comments", 0) > 5:
-                yield from self._get_post_comments(post_id, subreddit_name,
-                                                    tier, cutoff_time)
 
         logger.info(
             f"r/{subreddit_name} ({tier}): {post_count} new posts scanned"
