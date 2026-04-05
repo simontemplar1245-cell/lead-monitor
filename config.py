@@ -139,6 +139,32 @@ SUBREDDITS = {
         "VoIP",                # people looking for phone solutions
         "agency",              # digital marketing agencies
         "EntrepreneurRideAlong",  # people actively building businesses
+
+        # NEW - more buyer-dense niches from 2026 research
+        "MedicalAesthetics",   # med spa owners, appointment-heavy
+        "Esthetics",           # estheticians - solo owners
+        "Barber",              # barbers, solo/small shop owners
+        "MassageTherapists",   # massage therapists, booking-heavy
+        "tax",                 # tax preparers, seasonal phone overload
+        "bookkeeping",         # bookkeepers dealing with client inquiries
+        "AskPhotography",      # photographers, inquiry management
+        "Weddingsunder10k",    # wedding vendors, high-inquiry
+        "personaltraining",    # PTs / gym owners with scheduling
+        "therapists",          # small practice therapists
+        "privatepractice",     # healthcare private practices
+        "DogGrooming",         # groomers, appointment-based
+        "dogtraining",         # trainers, inquiry-heavy
+        "kitchenremodeling",   # contractors with long sales cycles
+        "AskContractors",      # Q&A for contractors / owners
+        "homeimprovement",     # mix of DIY + pro contractors
+        "GeneralContractor",   # owner-operators
+        "handyman",            # solo operators, miss calls on jobs
+        "Welding",             # mobile welders, miss calls on jobs
+        "TowTruck",            # dispatchers, 24/7 call requirements
+        "junkremoval",         # route-based, estimate calls
+        "movers",              # quote-heavy businesses
+        "selfstorage",         # facility owners, inquiry calls
+        "notary",              # mobile notaries, appointment-based
     ]
 }
 
@@ -383,6 +409,46 @@ PAIN_KEYWORDS = {
         "AI for my practice",
         "AI for my office",
     ],
+
+    # =========================================================================
+    # HIRING-INTENT SIGNALS (from research: a business actively trying to
+    # hire a receptionist / front desk person is the STRONGEST possible
+    # buying signal for AI receptionist services - they've already decided
+    # they need one, they just don't know an AI can do the job for 10% of
+    # the cost. These phrases appear in Reddit posts, job boards, etc.)
+    # =========================================================================
+    "hiring_signals": [
+        "hiring a receptionist",
+        "hiring receptionist",
+        "looking to hire receptionist",
+        "looking for a receptionist",
+        "need to hire front desk",
+        "hiring front desk",
+        "hiring front office",
+        "posting a job for",
+        "job posting receptionist",
+        "job ad for receptionist",
+        "struggling to hire receptionist",
+        "can't find a good receptionist",
+        "cant find a receptionist",
+        "no luck hiring",
+        "receptionist candidates",
+        "front desk candidates",
+        "receptionist turnover",
+        "high turnover front desk",
+        "back-to-back receptionists",
+        "receptionist salary",
+        "receptionist wage",
+        "what to pay receptionist",
+        "virtual assistant hire",
+        "hiring virtual assistant",
+        "outsource reception",
+        "outsource answering",
+        "answering service cost",
+        "how much does a receptionist cost",
+        "replace receptionist",
+        "replacing my receptionist",
+    ],
 }
 
 # Flatten all keywords into a single list for quick matching
@@ -504,6 +570,61 @@ BLUESKY = {
         "phone answering AI",
     ],
     "max_results": 25,
+}
+
+# =============================================================================
+# JOBS CONFIG (JobSpy - scrapes Indeed / ZipRecruiter / LinkedIn / Glassdoor)
+# =============================================================================
+# STRATEGY: A business posting a "receptionist" or "front desk" job listing is
+# the single STRONGEST buying signal we can find on the internet. They've
+# already decided they need reception coverage - they just don't know yet
+# that an AI can do it for 10% of the cost. These are the highest-intent
+# "leads" on the planet. Every posting we find = a business we can cold-pitch.
+#
+# JobSpy is free, open source, no API key. It scrapes multiple boards in one
+# call. Each scan pulls fresh postings (last 24h) so we don't re-contact.
+JOBS = {
+    "enabled": True,
+    # Which boards to pull from (no auth needed for any of these)
+    "sites": ["indeed", "zip_recruiter", "glassdoor", "linkedin"],
+    # Search terms - hiring signals for reception / phone-answering roles
+    "search_terms": [
+        "receptionist",
+        "front desk",
+        "front office receptionist",
+        "medical receptionist",
+        "dental receptionist",
+        "veterinary receptionist",
+        "legal receptionist",
+        "virtual receptionist",
+        "phone answering",
+        "appointment scheduler",
+        "patient coordinator",
+        "client intake",
+        "intake coordinator",
+        "customer service representative",
+    ],
+    # Geographic focus - US/Canada/UK (English markets where we can sell)
+    "locations": [
+        "United States",
+        "Canada",
+        "United Kingdom",
+    ],
+    # How far back to look (hours). 48 covers between-scan gaps.
+    "hours_old": 48,
+    # Results per search term per location (keep small - avoid rate limits)
+    "results_per_search": 20,
+    # Minimum company size filter - we want SMBs, not enterprise
+    # (enterprises have procurement teams and can't be cold-pitched)
+    # Titles we IGNORE (noise we don't want in the leads list)
+    "exclude_titles": [
+        "director",
+        "manager",
+        "supervisor",
+        "lead receptionist",
+        "head of",
+        "chief",
+    ],
 }
 
 # =============================================================================

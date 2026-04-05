@@ -13,6 +13,9 @@ streamlit==1.41.1            # Web dashboard
 
 # Notifications: ntfy.sh (uses requests - no extra dependency needed)
 
+# Jobs scraper - hiring-signal leads from Indeed/ZipRecruiter/LinkedIn/Glassdoor
+python-jobspy==1.1.80        # Multi-site job board scraper, no API key needed
+
 # Utilities
 schedule==1.2.2              # Job scheduling (for local runs)
 python-dateutil==2.9.0       # Date parsing

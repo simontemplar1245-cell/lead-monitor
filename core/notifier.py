@@ -172,6 +172,47 @@ class NtfyNotifier:
             tags="chart_with_upwards_trend",
         )
 
+    def send_scan_summary(self, all_stats: dict, duration: float) -> bool:
+        """
+        Send a summary notification after every scan cycle, even if nothing
+        was found. Uses low priority so it doesn't spam/ring, but you still
+        know the system is alive and working.
+        """
+        total_scanned = sum(s.get("scanned", 0) for s in all_stats.values())
+        total_hot = sum(s.get("hot", 0) for s in all_stats.values())
+        total_warm = sum(s.get("warm", 0) for s in all_stats.values())
+        total_cold = sum(s.get("cold", 0) for s in all_stats.values())
+
+        # If HOT or WARM leads were already alerted individually, skip the summary
+        # to avoid notification spam. Only send summary when nothing actionable found.
+        if total_hot > 0 or total_warm > 0:
+            return False
+
+        # Nothing found - send a quiet "still alive" heartbeat
+        per_platform = []
+        for platform_name, stats in all_stats.items():
+            scanned = stats.get("scanned", 0)
+            if scanned > 0:
+                per_platform.append(f"  {platform_name}: {scanned} scanned")
+
+        per_platform_text = "\n".join(per_platform) if per_platform else "  (all sources)"
+
+        message = (
+            f"No leads found this scan\n\n"
+            f"Scanned: {total_scanned} posts\n"
+            f"Filtered cold: {total_cold}\n"
+            f"Duration: {duration:.0f}s\n\n"
+            f"Sources:\n{per_platform_text}\n\n"
+            f"System is running. Next scan in ~30 minutes."
+        )
+
+        return self.send_message(
+            text=message,
+            title="Lead Monitor - Scan Complete (no leads)",
+            priority=2,  # low priority - arrives silently, no sound/vibration
+            tags="mag",  # magnifying glass emoji
+        )
+
     def send_error_alert(self, error_message: str) -> bool:
         """Send an alert when something goes wrong with the system."""
         message = f"Error: {error_message}\n\nCheck the dashboard for details."

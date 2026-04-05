@@ -36,6 +36,7 @@ on:
           - forums
           - hn
           - bluesky
+          - jobs
           - digest
           - test
 
@@ -104,6 +105,7 @@ jobs:
             forums)   python main.py --forums ;;
             hn)       python main.py --hn ;;
             bluesky)  python main.py --bluesky ;;
+            jobs)     python main.py --jobs ;;
             digest)   python main.py --digest ;;
             test)     python main.py --test ;;
             *)        python main.py ;;

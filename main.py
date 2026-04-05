@@ -14,6 +14,7 @@ Usage:
   python main.py --forums     # Forums only
   python main.py --hn         # Hacker News only
   python main.py --bluesky    # Bluesky only
+  python main.py --jobs       # Job boards only (hiring signals)
   python main.py --test       # Dry run (no notifications)
   python main.py --digest     # Send daily digest
 """
@@ -307,6 +308,90 @@ def run_bluesky_scan(db: LeadDatabase, classifier: LeadClassifier,
     return stats
 
 
+def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
+                  notifier: NtfyNotifier, test_mode: bool = False) -> dict:
+    """
+    Run the jobs scraper (JobSpy - Indeed, ZipRecruiter, LinkedIn, Glassdoor).
+
+    Job postings for receptionist / front desk roles are treated as hiring
+    signals - the strongest possible buying signal for an AI receptionist.
+    We force-classify every result as at least WARM so the classifier doesn't
+    filter them out as "cold" (they don't contain traditional pain language).
+    """
+    from scrapers.jobs_scraper import JobsScraper
+
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    start_time = time.time()
+
+    try:
+        scraper = JobsScraper()
+        if not scraper.enabled:
+            stats["errors"] = "Jobs scraper not configured (python-jobspy missing)"
+            return stats
+
+        for post_data in scraper.scan():
+            stats["scanned"] += 1
+
+            if db.is_duplicate(post_data["post_id"]):
+                continue
+
+            text = post_data.get("full_text", "")
+            classification = classifier.classify(
+                text,
+                platform=post_data.get("platform", ""),
+                community=post_data.get("community", ""),
+            )
+
+            # Job postings are ALREADY a buying signal. Even if Claude scores
+            # them low (because they lack traditional complaint language),
+            # we floor them at WARM so they still get pushed to the notifier.
+            # A business posting a receptionist job = a business that could
+            # buy an AI receptionist. Period.
+            if classification["category"] == "COLD":
+                classification["category"] = "WARM"
+                classification["score"] = max(
+                    float(classification.get("score", 0.0)), 0.55
+                )
+                classification["reasoning"] = (
+                    f"Hiring signal (auto-promoted from cold): "
+                    f"{classification.get('reasoning', '')}"
+                )
+
+            lead_data = {**post_data, **classification}
+            lead_id = db.save_lead(lead_data)
+            if lead_id is None:
+                continue
+
+            stats["found"] += 1
+
+            if classification["category"] == "HOT":
+                stats["hot"] += 1
+                if not test_mode:
+                    notifier.send_hot_alert(lead_data)
+            elif classification["category"] == "WARM":
+                stats["warm"] += 1
+                if not test_mode:
+                    notifier.send_warm_alert(lead_data)
+            else:
+                stats["cold"] += 1
+
+    except Exception as e:
+        stats["errors"] = str(e)
+        logger.error(f"Jobs scan error: {e}", exc_info=True)
+
+    duration = time.time() - start_time
+    db.log_scan("jobs", "Job Boards", stats["scanned"], stats["found"],
+                stats["hot"], stats["warm"], stats["cold"],
+                stats["errors"], duration)
+
+    logger.info(
+        f"Jobs scan complete: {stats['scanned']} scanned, "
+        f"{stats['found']} leads ({stats['hot']} hot, {stats['warm']} warm) "
+        f"in {duration:.1f}s"
+    )
+    return stats
+
+
 def run_full_scan(test_mode: bool = False):
     """Run a complete scan cycle across all platforms."""
     logger.info("=" * 60)
@@ -337,6 +422,9 @@ def run_full_scan(test_mode: bool = False):
     logger.info("--- Bluesky Scan ---")
     all_stats["bluesky"] = run_bluesky_scan(db, classifier, notifier, test_mode)
 
+    logger.info("--- Jobs Scan (hiring signals) ---")
+    all_stats["jobs"] = run_jobs_scan(db, classifier, notifier, test_mode)
+
     # Summary
     total_time = time.time() - start_time
     total_scanned = sum(s["scanned"] for s in all_stats.values())
@@ -356,6 +444,11 @@ def run_full_scan(test_mode: bool = False):
     # Send error alert if critical issues
     if total_errors and not test_mode:
         notifier.send_error_alert(f"Scan completed with errors: {'; '.join(total_errors)}")
+
+    # Send a "no leads found" heartbeat notification if nothing actionable turned up.
+    # This skips itself automatically if HOT/WARM leads were already sent.
+    if not test_mode:
+        notifier.send_scan_summary(all_stats, total_time)
 
     return all_stats
 
@@ -378,6 +471,7 @@ def main():
     parser.add_argument("--forums", action="store_true", help="Run forum scan only")
     parser.add_argument("--hn", action="store_true", help="Run Hacker News scan only")
     parser.add_argument("--bluesky", action="store_true", help="Run Bluesky scan only")
+    parser.add_argument("--jobs", action="store_true", help="Run jobs scan only (hiring signals)")
     parser.add_argument("--test", action="store_true", help="Test mode (no notifications)")
     parser.add_argument("--digest", action="store_true", help="Send daily digest")
 
@@ -388,7 +482,7 @@ def main():
         return
 
     # If specific platforms selected, run only those
-    if any([args.reddit, args.forums, args.hn, args.bluesky]):
+    if any([args.reddit, args.forums, args.hn, args.bluesky, args.jobs]):
         db = LeadDatabase(DATABASE_PATH)
         classifier = LeadClassifier()
         notifier = NtfyNotifier()
@@ -401,6 +495,8 @@ def main():
             run_hackernews_scan(db, classifier, notifier, args.test)
         if args.bluesky:
             run_bluesky_scan(db, classifier, notifier, args.test)
+        if args.jobs:
+            run_jobs_scan(db, classifier, notifier, args.test)
     else:
         # Run full scan
         run_full_scan(test_mode=args.test)
