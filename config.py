@@ -599,9 +599,11 @@ JOBS = {
     # Which boards to pull from (no auth needed for any of these)
     # NOTE: Glassdoor removed - its API returns 400 for generic location
     # strings like "United States" and its location parser is broken.
+    # NOTE: ZipRecruiter removed - Cloudflare WAF now returns 403 "forbidden
+    # cf-waf" on every request from GitHub Actions IPs. Dead weight.
     # LinkedIn kept but tends to rate-limit aggressively so it adds little.
     # Indeed is the workhorse - free, reliable, huge coverage, no auth.
-    "sites": ["indeed", "zip_recruiter", "linkedin"],
+    "sites": ["indeed", "linkedin"],
 
     # STRATEGY UPDATE: An AI receptionist cannot replace a physical front
     # desk worker (who greets patients, hands over paperwork, etc.). It CAN

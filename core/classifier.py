@@ -86,7 +86,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with these fields:
 """
 
             response = self.client.messages.create(
-                model="claude-haiku-4-20250414",
+                model="claude-haiku-4-5",
                 max_tokens=500,
                 system=CLASSIFIER_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
