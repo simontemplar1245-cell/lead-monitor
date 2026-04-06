@@ -2,11 +2,11 @@
 Lead Monitor - Main Entry Point
 ================================
 Orchestrates the full scanning pipeline:
-1. Run all scrapers (Reddit, forums, HN, Bluesky)
+1. Run all scrapers (Reddit, forums, HN, Bluesky, Jobs)
 2. Pre-filter with keywords
 3. Classify with Claude Haiku
 4. Save to database
-5. Send ntfy.sh push notifications for HOT leads
+5. Buffer all leads, then send ONE ntfy.sh digest notification
 
 Usage:
   python main.py              # Run a full scan cycle
@@ -50,6 +50,72 @@ logging.basicConfig(
 logger = logging.getLogger("lead_monitor")
 
 
+# =============================================================================
+# SHARED LEAD-PROCESSING LOGIC
+# =============================================================================
+
+def _process_lead(post_data: dict, db: LeadDatabase,
+                  classifier: LeadClassifier, notifier: NtfyNotifier,
+                  stats: dict, test_mode: bool,
+                  force_warm_floor: bool = False):
+    """
+    Classify, save, and buffer a single lead.
+    Shared by all scan functions to avoid code duplication.
+
+    force_warm_floor: if True, auto-promote COLD→WARM (used for job postings
+                      which are inherently buying signals even without pain
+                      language).
+    """
+    if db.is_duplicate(post_data["post_id"]):
+        return
+
+    text = post_data.get("full_text", "")
+    classification = classifier.classify(
+        text,
+        platform=post_data.get("platform", ""),
+        community=post_data.get("community", ""),
+    )
+
+    # For job postings, floor at WARM: a company hiring a receptionist IS
+    # a buying signal even if the classifier sees no "complaint" language.
+    if force_warm_floor and classification["category"] == "COLD":
+        classification["category"] = "WARM"
+        classification["score"] = max(
+            float(classification.get("score", 0.0)), 0.55
+        )
+        classification["reasoning"] = (
+            f"Hiring signal (auto-promoted): "
+            f"{classification.get('reasoning', '')}"
+        )
+
+    # Skip cold leads that didn't even match a keyword
+    if classification["category"] == "COLD" and not classification.get("keyword_matched"):
+        return
+
+    lead_data = {**post_data, **classification}
+
+    lead_id = db.save_lead(lead_data)
+    if lead_id is None:
+        return
+
+    stats["found"] += 1
+
+    if classification["category"] == "HOT":
+        stats["hot"] += 1
+    elif classification["category"] == "WARM":
+        stats["warm"] += 1
+    else:
+        stats["cold"] += 1
+
+    # Buffer the lead — ONE digest notification sent at end of scan
+    if not test_mode:
+        notifier.buffer_lead(lead_data)
+
+
+# =============================================================================
+# SCAN FUNCTIONS
+# =============================================================================
+
 def run_reddit_scan(db: LeadDatabase, classifier: LeadClassifier,
                     notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """Run Reddit scraper across all target subreddits."""
@@ -66,44 +132,7 @@ def run_reddit_scan(db: LeadDatabase, classifier: LeadClassifier,
 
         for post_data in scraper.scan_all_subreddits():
             stats["scanned"] += 1
-
-            # Check for duplicate
-            if db.is_duplicate(post_data["post_id"]):
-                continue
-
-            # Classify the post
-            text = post_data.get("full_text", "")
-            classification = classifier.classify(
-                text,
-                platform=post_data.get("platform", ""),
-                community=post_data.get("community", ""),
-            )
-
-            # Skip cold leads that didn't even match keywords
-            if classification["category"] == "COLD" and not classification.get("keyword_matched"):
-                continue
-
-            # Merge classification into post data
-            lead_data = {**post_data, **classification}
-
-            # Save to database
-            lead_id = db.save_lead(lead_data)
-            if lead_id is None:
-                continue
-
-            stats["found"] += 1
-
-            # Track by category
-            if classification["category"] == "HOT":
-                stats["hot"] += 1
-                if not test_mode:
-                    notifier.send_hot_alert(lead_data)
-            elif classification["category"] == "WARM":
-                stats["warm"] += 1
-                if not test_mode:
-                    notifier.send_warm_alert(lead_data)
-            else:
-                stats["cold"] += 1
+            _process_lead(post_data, db, classifier, notifier, stats, test_mode)
 
     except Exception as e:
         stats["errors"] = str(e)
@@ -132,40 +161,9 @@ def run_forum_scan(db: LeadDatabase, classifier: LeadClassifier,
 
     try:
         scraper = ForumScraper()
-
         for post_data in scraper.scan_all_forums():
             stats["scanned"] += 1
-
-            if db.is_duplicate(post_data["post_id"]):
-                continue
-
-            text = post_data.get("full_text", "")
-            classification = classifier.classify(
-                text,
-                platform=post_data.get("platform", ""),
-                community=post_data.get("community", ""),
-            )
-
-            if classification["category"] == "COLD" and not classification.get("keyword_matched"):
-                continue
-
-            lead_data = {**post_data, **classification}
-            lead_id = db.save_lead(lead_data)
-            if lead_id is None:
-                continue
-
-            stats["found"] += 1
-
-            if classification["category"] == "HOT":
-                stats["hot"] += 1
-                if not test_mode:
-                    notifier.send_hot_alert(lead_data)
-            elif classification["category"] == "WARM":
-                stats["warm"] += 1
-                if not test_mode:
-                    notifier.send_warm_alert(lead_data)
-            else:
-                stats["cold"] += 1
+            _process_lead(post_data, db, classifier, notifier, stats, test_mode)
 
     except Exception as e:
         stats["errors"] = str(e)
@@ -194,40 +192,9 @@ def run_hackernews_scan(db: LeadDatabase, classifier: LeadClassifier,
 
     try:
         scraper = HackerNewsScraper()
-
         for post_data in scraper.scan():
             stats["scanned"] += 1
-
-            if db.is_duplicate(post_data["post_id"]):
-                continue
-
-            text = post_data.get("full_text", "")
-            classification = classifier.classify(
-                text,
-                platform=post_data.get("platform", ""),
-                community=post_data.get("community", ""),
-            )
-
-            if classification["category"] == "COLD" and not classification.get("keyword_matched"):
-                continue
-
-            lead_data = {**post_data, **classification}
-            lead_id = db.save_lead(lead_data)
-            if lead_id is None:
-                continue
-
-            stats["found"] += 1
-
-            if classification["category"] == "HOT":
-                stats["hot"] += 1
-                if not test_mode:
-                    notifier.send_hot_alert(lead_data)
-            elif classification["category"] == "WARM":
-                stats["warm"] += 1
-                if not test_mode:
-                    notifier.send_warm_alert(lead_data)
-            else:
-                stats["cold"] += 1
+            _process_lead(post_data, db, classifier, notifier, stats, test_mode)
 
     except Exception as e:
         stats["errors"] = str(e)
@@ -256,40 +223,9 @@ def run_bluesky_scan(db: LeadDatabase, classifier: LeadClassifier,
 
     try:
         scraper = BlueskyScraper()
-
         for post_data in scraper.scan():
             stats["scanned"] += 1
-
-            if db.is_duplicate(post_data["post_id"]):
-                continue
-
-            text = post_data.get("full_text", "")
-            classification = classifier.classify(
-                text,
-                platform=post_data.get("platform", ""),
-                community=post_data.get("community", ""),
-            )
-
-            if classification["category"] == "COLD" and not classification.get("keyword_matched"):
-                continue
-
-            lead_data = {**post_data, **classification}
-            lead_id = db.save_lead(lead_data)
-            if lead_id is None:
-                continue
-
-            stats["found"] += 1
-
-            if classification["category"] == "HOT":
-                stats["hot"] += 1
-                if not test_mode:
-                    notifier.send_hot_alert(lead_data)
-            elif classification["category"] == "WARM":
-                stats["warm"] += 1
-                if not test_mode:
-                    notifier.send_warm_alert(lead_data)
-            else:
-                stats["cold"] += 1
+            _process_lead(post_data, db, classifier, notifier, stats, test_mode)
 
     except Exception as e:
         stats["errors"] = str(e)
@@ -311,12 +247,12 @@ def run_bluesky_scan(db: LeadDatabase, classifier: LeadClassifier,
 def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
                   notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """
-    Run the jobs scraper (JobSpy - Indeed, ZipRecruiter, LinkedIn, Glassdoor).
+    Run the jobs scraper (JobSpy - Indeed / LinkedIn).
 
-    Job postings for receptionist / front desk roles are treated as hiring
-    signals - the strongest possible buying signal for an AI receptionist.
-    We force-classify every result as at least WARM so the classifier doesn't
-    filter them out as "cold" (they don't contain traditional pain language).
+    Every result is a receptionist / phone role at a real company. These are
+    inherently buying signals so we force-floor them at WARM even when the
+    classifier scores them COLD (job descriptions don't contain traditional
+    pain language).
     """
     from scrapers.jobs_scraper import JobsScraper
 
@@ -331,49 +267,10 @@ def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
 
         for post_data in scraper.scan():
             stats["scanned"] += 1
-
-            if db.is_duplicate(post_data["post_id"]):
-                continue
-
-            text = post_data.get("full_text", "")
-            classification = classifier.classify(
-                text,
-                platform=post_data.get("platform", ""),
-                community=post_data.get("community", ""),
+            _process_lead(
+                post_data, db, classifier, notifier, stats, test_mode,
+                force_warm_floor=True,  # Job posting = buying signal
             )
-
-            # Job postings are ALREADY a buying signal. Even if Claude scores
-            # them low (because they lack traditional complaint language),
-            # we floor them at WARM so they still get pushed to the notifier.
-            # A business posting a receptionist job = a business that could
-            # buy an AI receptionist. Period.
-            if classification["category"] == "COLD":
-                classification["category"] = "WARM"
-                classification["score"] = max(
-                    float(classification.get("score", 0.0)), 0.55
-                )
-                classification["reasoning"] = (
-                    f"Hiring signal (auto-promoted from cold): "
-                    f"{classification.get('reasoning', '')}"
-                )
-
-            lead_data = {**post_data, **classification}
-            lead_id = db.save_lead(lead_data)
-            if lead_id is None:
-                continue
-
-            stats["found"] += 1
-
-            if classification["category"] == "HOT":
-                stats["hot"] += 1
-                if not test_mode:
-                    notifier.send_hot_alert(lead_data)
-            elif classification["category"] == "WARM":
-                stats["warm"] += 1
-                if not test_mode:
-                    notifier.send_warm_alert(lead_data)
-            else:
-                stats["cold"] += 1
 
     except Exception as e:
         stats["errors"] = str(e)
@@ -392,6 +289,10 @@ def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
     return stats
 
 
+# =============================================================================
+# FULL SCAN ORCHESTRATOR
+# =============================================================================
+
 def run_full_scan(test_mode: bool = False):
     """Run a complete scan cycle across all platforms."""
     logger.info("=" * 60)
@@ -407,7 +308,7 @@ def run_full_scan(test_mode: bool = False):
     classifier = LeadClassifier()
     notifier = NtfyNotifier()
 
-    # Run all scrapers
+    # Run all scrapers — leads are BUFFERED in notifier, not sent yet
     all_stats = {}
 
     logger.info("--- Reddit Scan ---")
@@ -424,6 +325,13 @@ def run_full_scan(test_mode: bool = False):
 
     logger.info("--- Jobs Scan (hiring signals) ---")
     all_stats["jobs"] = run_jobs_scan(db, classifier, notifier, test_mode)
+
+    # =========================================================================
+    # SEND ONE DIGEST NOTIFICATION with all buffered leads
+    # =========================================================================
+    if not test_mode:
+        logger.info("--- Sending Digest ---")
+        notifier.flush_digest()
 
     # Summary
     total_time = time.time() - start_time
@@ -443,10 +351,11 @@ def run_full_scan(test_mode: bool = False):
 
     # Send error alert if critical issues
     if total_errors and not test_mode:
-        notifier.send_error_alert(f"Scan completed with errors: {'; '.join(total_errors)}")
+        notifier.send_error_alert(
+            f"Scan completed with errors: {'; '.join(total_errors)}"
+        )
 
-    # Send a "no leads found" heartbeat notification if nothing actionable turned up.
-    # This skips itself automatically if HOT/WARM leads were already sent.
+    # Quiet heartbeat if nothing was found (digest already handled leads)
     if not test_mode:
         notifier.send_scan_summary(all_stats, total_time)
 
@@ -466,13 +375,17 @@ def send_daily_digest():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Lead Monitor for Advance AI Services")
+    parser = argparse.ArgumentParser(
+        description="Lead Monitor for Advance AI Services"
+    )
     parser.add_argument("--reddit", action="store_true", help="Run Reddit scan only")
     parser.add_argument("--forums", action="store_true", help="Run forum scan only")
     parser.add_argument("--hn", action="store_true", help="Run Hacker News scan only")
     parser.add_argument("--bluesky", action="store_true", help="Run Bluesky scan only")
-    parser.add_argument("--jobs", action="store_true", help="Run jobs scan only (hiring signals)")
-    parser.add_argument("--test", action="store_true", help="Test mode (no notifications)")
+    parser.add_argument("--jobs", action="store_true",
+                        help="Run jobs scan only (hiring signals)")
+    parser.add_argument("--test", action="store_true",
+                        help="Test mode (no notifications)")
     parser.add_argument("--digest", action="store_true", help="Send daily digest")
 
     args = parser.parse_args()
@@ -497,8 +410,12 @@ def main():
             run_bluesky_scan(db, classifier, notifier, args.test)
         if args.jobs:
             run_jobs_scan(db, classifier, notifier, args.test)
+
+        # Flush any buffered leads as ONE notification
+        if not args.test:
+            notifier.flush_digest()
     else:
-        # Run full scan
+        # Run full scan (flush is called inside run_full_scan)
         run_full_scan(test_mode=args.test)
 
 

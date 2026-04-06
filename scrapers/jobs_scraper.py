@@ -151,8 +151,12 @@ class JobsScraper:
                     if not (is_remote_flag or title_confirms_remote or desc_confirms_remote):
                         continue
 
-                # Build a stable unique ID for dedup
-                unique_key = f"job_{site}_{company}_{title}_{location_str}"
+                # Build a stable unique ID for dedup. Deliberately EXCLUDES the
+                # site (Indeed vs LinkedIn) so the same job posted on both
+                # boards hashes to the same ID → only one notification.
+                norm_company = company_lower.strip()
+                norm_title = title_lower.strip()
+                unique_key = f"job_{norm_company}_{norm_title}"
                 post_id = f"jobs_{hashlib.md5(unique_key.encode()).hexdigest()[:16]}"
                 if post_id in seen_ids:
                     continue

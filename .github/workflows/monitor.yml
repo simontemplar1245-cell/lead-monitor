@@ -71,15 +71,17 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
-      # Download database from previous run (keeps leads across runs)
-      - name: Download database artifact
-        uses: dawidd6/action-download-artifact@v6
+      # Restore database from the previous run via GitHub Actions cache.
+      # Each run saves with a unique key (run_id), and restore falls back
+      # to the most recent matching prefix. This ensures leads persist
+      # across runs so you never see the same lead twice.
+      - name: Restore database cache
+        uses: actions/cache/restore@v4
         with:
-          name: lead-monitor-db
-          path: data/
-          if_no_artifact_found: warn
-          workflow_conclusion: ''
-        continue-on-error: true
+          path: data/leads.db
+          key: lead-monitor-db-${{ github.run_id }}
+          restore-keys: |
+            lead-monitor-db-
 
       # Determine scan mode
       - name: Determine mode
@@ -111,15 +113,13 @@ jobs:
             *)        python main.py ;;
           esac
 
-      # Save database for next run
-      - name: Upload database artifact
-        uses: actions/upload-artifact@v4
+      # Save database for next run (unique key per run, auto-evicts old ones)
+      - name: Save database cache
+        uses: actions/cache/save@v4
         if: always()
         with:
-          name: lead-monitor-db
           path: data/leads.db
-          retention-days: 90
-          overwrite: true
+          key: lead-monitor-db-${{ github.run_id }}
 
       # Save logs for debugging
       - name: Upload logs

@@ -628,14 +628,12 @@ JOBS = {
         # Tier C - broader catch (requires remote flag to survive)
         "remote receptionist part time",
         "work from home receptionist",
-        # Tier D - CHATBOT-BUILD signals: businesses hiring someone to
-        # build a chatbot = businesses that want to BUY a chatbot solution.
-        # Same buyer intent from the opposite angle. Proven - these hit.
-        "chatbot developer",
-        "conversational AI developer",
-        "AI chatbot integration",
-        "voice AI developer",
-        "build chatbot contract",
+        # NOTE: Tier D (chatbot developer, voice AI developer, etc.) was
+        # REMOVED because it pulled jobs AT AI companies (ElevenLabs, Tavus,
+        # BAE Systems) instead of jobs at businesses that WANT an AI
+        # receptionist. Those are tech company hiring posts, not buying
+        # signals. Only Tier A-C survive: all are genuine receptionist
+        # roles at real businesses.
     ],
     # Geographic focus - US/Canada/UK (English markets where we can sell)
     "locations": [
@@ -731,72 +729,9 @@ IMPORTANT RULES FOR SUGGESTED REPLIES:
 # =============================================================================
 # NTFY.SH MESSAGE TEMPLATES (plain text - ntfy doesn't use markdown)
 # =============================================================================
-# The notification IS the entire lead brief - user reads it, decides, taps link.
-# Every template includes: who (company/author), what (title/summary),
-# when (posted time), where (link), why (reasoning), and next step (suggested reply).
-
-HOT_ALERT_TEMPLATE = """🔥 HOT LEAD
-
-WHO: {company}
-WHAT: {title}
-WHERE: {platform} / {community}
-WHEN: Posted {time_ago}
-SCORE: {score}/1.0
-
-SUMMARY:
-{post_text}
-
-WHY THIS IS A LEAD:
-{reasoning}
-
-SUGGESTED REPLY:
-{suggested_reply}
-
-🔗 OPEN: {post_url}
-"""
-
-WARM_DIGEST_TEMPLATE = """⚡ WARM LEAD
-
-WHO: {company}
-WHAT: {title}
-WHERE: {platform} / {community}
-WHEN: Posted {time_ago}
-SCORE: {score}/1.0
-
-SUMMARY:
-{post_text_short}
-
-WHY: {reasoning}
-
-SUGGESTED REPLY:
-{suggested_reply}
-
-🔗 OPEN: {post_url}
-"""
-
-# Job postings get a specialized template since "author" = the hiring company,
-# "title" = the role, and there's no "reply" - you cold-pitch the company direct.
-JOB_ALERT_TEMPLATE = """💼 HIRING SIGNAL ({category})
-
-COMPANY: {company}
-ROLE: {title}
-SOURCE: {platform} / {community}
-POSTED: {time_ago}
-
-ROLE SUMMARY:
-{post_text}
-
-WHY THIS IS A LEAD:
-{company} is actively trying to hire someone to do phone/reception work.
-That's the exact job your AI receptionist does - for ~10% of the salary cost.
-They've already decided they need the function. Pitch them now before they
-hire a human.
-
-COLD-PITCH ANGLE:
-{suggested_reply}
-
-🔗 JOB POSTING: {post_url}
-"""
+# NOTE: Individual HOT/WARM/JOB alert templates were REMOVED. All leads are
+# now bundled into ONE digest notification per scan cycle. The formatting
+# lives in core/notifier.py (NtfyNotifier.flush_digest).
 
 DAILY_DIGEST_TEMPLATE = """DAILY LEAD DIGEST
 
