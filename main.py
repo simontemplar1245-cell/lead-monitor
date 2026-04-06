@@ -244,6 +244,47 @@ def run_bluesky_scan(db: LeadDatabase, classifier: LeadClassifier,
     return stats
 
 
+def run_reddit_search_scan(db: LeadDatabase, classifier: LeadClassifier,
+                           notifier: NtfyNotifier,
+                           test_mode: bool = False) -> dict:
+    """
+    Search ALL of Reddit for high-intent buyer queries.
+    Unlike run_reddit_scan (which monitors specific subreddits), this uses
+    reddit.com/search to find people anywhere on Reddit who are actively
+    looking to buy a chatbot or virtual receptionist.
+    """
+    from scrapers.reddit_search_scraper import RedditSearchScraper
+
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    start_time = time.time()
+
+    try:
+        scraper = RedditSearchScraper()
+        if not scraper.enabled:
+            stats["errors"] = "Reddit search scraper disabled"
+            return stats
+
+        for post_data in scraper.scan():
+            stats["scanned"] += 1
+            _process_lead(post_data, db, classifier, notifier, stats, test_mode)
+
+    except Exception as e:
+        stats["errors"] = str(e)
+        logger.error(f"Reddit search scan error: {e}", exc_info=True)
+
+    duration = time.time() - start_time
+    db.log_scan("reddit_search", "all", stats["scanned"], stats["found"],
+                stats["hot"], stats["warm"], stats["cold"],
+                stats["errors"], duration)
+
+    logger.info(
+        f"Reddit search complete: {stats['scanned']} scanned, "
+        f"{stats['found']} leads ({stats['hot']} hot, {stats['warm']} warm) "
+        f"in {duration:.1f}s"
+    )
+    return stats
+
+
 def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
                   notifier: NtfyNotifier, test_mode: bool = False) -> dict:
     """
@@ -323,6 +364,11 @@ def run_full_scan(test_mode: bool = False):
     logger.info("--- Bluesky Scan ---")
     all_stats["bluesky"] = run_bluesky_scan(db, classifier, notifier, test_mode)
 
+    logger.info("--- Reddit Search (high-intent buyer queries) ---")
+    all_stats["reddit_search"] = run_reddit_search_scan(
+        db, classifier, notifier, test_mode
+    )
+
     logger.info("--- Jobs Scan (hiring signals) ---")
     all_stats["jobs"] = run_jobs_scan(db, classifier, notifier, test_mode)
 
@@ -382,6 +428,8 @@ def main():
     parser.add_argument("--forums", action="store_true", help="Run forum scan only")
     parser.add_argument("--hn", action="store_true", help="Run Hacker News scan only")
     parser.add_argument("--bluesky", action="store_true", help="Run Bluesky scan only")
+    parser.add_argument("--reddit-search", action="store_true",
+                        help="Run Reddit cross-search only (high-intent queries)")
     parser.add_argument("--jobs", action="store_true",
                         help="Run jobs scan only (hiring signals)")
     parser.add_argument("--test", action="store_true",
@@ -395,7 +443,8 @@ def main():
         return
 
     # If specific platforms selected, run only those
-    if any([args.reddit, args.forums, args.hn, args.bluesky, args.jobs]):
+    if any([args.reddit, args.forums, args.hn, args.bluesky,
+            args.reddit_search, args.jobs]):
         db = LeadDatabase(DATABASE_PATH)
         classifier = LeadClassifier()
         notifier = NtfyNotifier()
@@ -408,6 +457,8 @@ def main():
             run_hackernews_scan(db, classifier, notifier, args.test)
         if args.bluesky:
             run_bluesky_scan(db, classifier, notifier, args.test)
+        if args.reddit_search:
+            run_reddit_search_scan(db, classifier, notifier, args.test)
         if args.jobs:
             run_jobs_scan(db, classifier, notifier, args.test)
 

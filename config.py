@@ -32,7 +32,7 @@ NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh")
 SCAN_INTERVAL_MINUTES = 30  # GitHub Actions runs every 30 mins
 MAX_POSTS_PER_SUBREDDIT = 25  # per scan cycle
 MAX_POSTS_PER_FORUM = 15  # forums are slower, smaller
-LOOKBACK_HOURS = 1  # only look at posts from last hour (avoids duplicates)
+LOOKBACK_HOURS = 24  # look at last 24h of posts (DB dedup prevents re-alerting)
 
 # =============================================================================
 # CLASSIFICATION THRESHOLDS
@@ -463,6 +463,41 @@ PAIN_KEYWORDS = {
 ALL_KEYWORDS = []
 for category, keywords in PAIN_KEYWORDS.items():
     ALL_KEYWORDS.extend(keywords)
+
+# =============================================================================
+# REDDIT SEARCH - searches ALL of Reddit for high-intent buyer queries
+# =============================================================================
+# The subreddit scanner above monitors SPECIFIC communities for pain signals.
+# This searches reddit.com/search across ALL subreddits for people who are
+# actively looking to BUY a solution. These are the highest-intent leads:
+# someone searching for "virtual receptionist recommendation" has already
+# decided they want one — they just need to pick a vendor.
+REDDIT_SEARCH = {
+    "enabled": True,
+    "queries": [
+        # Direct purchase intent
+        "virtual receptionist recommendation",
+        "AI receptionist for my business",
+        "best chatbot for small business",
+        "chatbot for my website recommendation",
+        "need a chatbot for customer service",
+        "looking for answering service",
+        "phone answering service recommendation",
+        # Pain-driven searches
+        "receptionist quit what do I do",
+        "can't afford receptionist alternative",
+        "too many missed calls small business",
+        "after hours phone answering",
+        # Comparison shopping (buyer is comparing, about to purchase)
+        "smith.ai vs ruby receptionist",
+        "best virtual receptionist service",
+        "AI phone answering service",
+        "automated receptionist for office",
+    ],
+    "sort": "new",       # newest first
+    "time_filter": "week",  # last 7 days
+    "results_per_query": 10,
+}
 
 # =============================================================================
 # FORUM TARGETS (scraped with BeautifulSoup/Playwright)
