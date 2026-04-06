@@ -45,6 +45,23 @@ class JobsScraper:
             "call center", "home based", "home-based",
         )
 
+        # TITLE RELEVANCE FILTER: the job title MUST contain at least one
+        # of these tokens to prove it's actually a receptionist/phone/intake
+        # role. Without this, Indeed returns "related" results like
+        # "Remote Rheumatologist" or "Work From Home Psychologist" which
+        # are remote but NOT reception roles an AI can replace.
+        self._relevant_title_tokens = (
+            "receptionist", "front desk", "front office",
+            "intake", "scheduler", "scheduling",
+            "call center", "call centre", "phone",
+            "customer service", "customer support",
+            "operator", "dispatcher", "answering",
+            "administrative assistant", "admin assistant",
+            "office assistant", "virtual assistant",
+            "patient access", "medical secretary",
+            "booking", "appointment",
+        )
+
         # Lazy-import jobspy so the rest of the system still works if the
         # package isn't installed (e.g., during minimal CI runs).
         self._jobspy = None
@@ -134,6 +151,15 @@ class JobsScraper:
                 # Filter out senior/management roles - we want solo operators
                 # and SMB owners who would cold-buy an AI receptionist
                 if any(bad in title_lower for bad in self.exclude_titles):
+                    continue
+
+                # TITLE RELEVANCE FILTER: Indeed/LinkedIn return "related"
+                # results that are remote but NOT receptionist roles (e.g.
+                # "Remote Rheumatologist", "WFH Psychologist"). Only keep
+                # jobs where the title proves it's a reception/phone/intake
+                # role that an AI could actually replace.
+                if not any(tok in title_lower for tok in self._relevant_title_tokens):
+                    logger.debug(f"Skipped irrelevant title: {title}")
                     continue
 
                 # STRICT REMOTE FILTER: an AI receptionist can only replace
