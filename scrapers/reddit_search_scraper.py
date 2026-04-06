@@ -1,19 +1,19 @@
 """
 Reddit Search Scraper
 =====================
-Searches ALL of Reddit (reddit.com/search) for high-intent buyer queries.
+Searches within our highest-value subreddits for high-intent buyer queries.
 
-Unlike the subreddit scraper (which monitors specific communities for pain
-signals), this searches the entire site for people who are actively looking
-to BUY a solution — e.g. "virtual receptionist recommendation", "best
-chatbot for small business".
+Reddit blocks its global /search.json from datacenter IPs (403 Blocked),
+but per-subreddit search works fine:
+    /r/{subreddit}/search.json?q=QUERY&restrict_sr=1
 
-Uses Reddit's public JSON search endpoint. No API key needed.
+We search a curated list of the best buyer-dense subreddits for queries
+like "virtual receptionist", "chatbot recommendation", etc.
 """
 
 import time
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Generator
 
 import requests
@@ -22,18 +22,34 @@ from config import REDDIT_SEARCH, REDDIT_USER_AGENT
 
 logger = logging.getLogger(__name__)
 
-REDDIT_SEARCH_URL = "https://www.reddit.com/search.json"
-
 HEADERS = {
     "User-Agent": REDDIT_USER_AGENT,
     "Accept": "application/json",
 }
 
+# High-value subreddits to search within. These are the ones most likely
+# to contain buyer-intent posts about virtual receptionists / chatbots.
+# We don't search ALL 80+ subreddits (too slow) — just the top 12.
+SEARCH_SUBREDDITS = [
+    "smallbusiness",
+    "Entrepreneur",
+    "sweatystartup",
+    "Dentistry",
+    "Lawyertalk",
+    "LawFirm",
+    "realtors",
+    "HVAC",
+    "plumbing",
+    "electricians",
+    "restaurantowners",
+    "PropertyManagement",
+]
+
 
 class RedditSearchScraper:
     """
-    Searches all of Reddit for high-intent buyer queries.
-    No API key or account required.
+    Searches within top subreddits for high-intent buyer queries.
+    Uses per-subreddit search endpoint (not blocked from datacenter IPs).
     """
 
     def __init__(self):
@@ -45,54 +61,65 @@ class RedditSearchScraper:
         self.time_filter = REDDIT_SEARCH.get("time_filter", "week")
         self.results_per_query = REDDIT_SEARCH.get("results_per_query", 10)
         logger.info(
-            f"Reddit search scraper initialised: {len(self.queries)} queries"
+            f"Reddit search scraper initialised: {len(self.queries)} queries "
+            f"x {len(SEARCH_SUBREDDITS)} subreddits"
         )
 
     def scan(self) -> Generator[dict, None, None]:
-        """
-        Run all search queries and yield post data for each result.
-        """
+        """Run all search queries across all target subreddits."""
         if not self.enabled or not self.queries:
             logger.info("Reddit search scraper disabled or no queries configured")
             return
 
         seen_ids = set()
 
-        for query in self.queries:
-            try:
-                yield from self._search(query, seen_ids)
-                # Reddit rate limit: stay under 1 req/sec
-                time.sleep(2)
-            except Exception as e:
-                logger.error(f"Reddit search error for '{query}': {e}")
+        for subreddit in SEARCH_SUBREDDITS:
+            for query in self.queries:
+                try:
+                    yield from self._search(subreddit, query, seen_ids)
+                    time.sleep(2)  # Reddit rate limit
+                except Exception as e:
+                    logger.error(
+                        f"Reddit search error for '{query}' in r/{subreddit}: {e}"
+                    )
 
-    def _search(self, query: str, seen_ids: set) -> Generator[dict, None, None]:
-        """Run one Reddit search and yield normalized post dicts."""
+    def _search(self, subreddit: str, query: str,
+                seen_ids: set) -> Generator[dict, None, None]:
+        """Run one per-subreddit search and yield normalized post dicts."""
+        url = f"https://www.reddit.com/r/{subreddit}/search.json"
         params = {
             "q": query,
             "sort": self.sort,
             "t": self.time_filter,
             "limit": self.results_per_query,
-            "type": "link",  # only posts, not comments
+            "restrict_sr": 1,  # search within this subreddit only
+            "type": "link",
         }
 
         try:
-            response = self.session.get(
-                REDDIT_SEARCH_URL, params=params, timeout=15
-            )
+            response = self.session.get(url, params=params, timeout=15)
 
             if response.status_code == 429:
                 logger.warning("Reddit search rate limited — waiting 60s")
                 time.sleep(60)
                 return
+            if response.status_code in (403, 404):
+                # Subreddit private/banned or endpoint blocked — skip
+                logger.debug(
+                    f"r/{subreddit} search returned {response.status_code}"
+                )
+                return
 
             response.raise_for_status()
             data = response.json()
         except requests.RequestException as e:
-            logger.error(f"Reddit search request failed for '{query}': {e}")
+            logger.error(
+                f"Reddit search request failed for '{query}' in "
+                f"r/{subreddit}: {e}"
+            )
             return
         except ValueError as e:
-            logger.error(f"Reddit search JSON parse error for '{query}': {e}")
+            logger.error(f"Reddit search JSON parse error: {e}")
             return
 
         posts = data.get("data", {}).get("children", [])
@@ -115,7 +142,6 @@ class RedditSearchScraper:
             title = post.get("title", "")
             selftext = post.get("selftext", "") or ""
             permalink = post.get("permalink", "")
-            subreddit = post.get("subreddit", "unknown")
             num_comments = post.get("num_comments", 0)
 
             if selftext in ("[deleted]", "[removed]"):
@@ -127,7 +153,7 @@ class RedditSearchScraper:
             yield {
                 "post_id": f"reddit_search_{post_id}",
                 "platform": "reddit_search",
-                "community": f"r/{subreddit} (via search: {query[:30]})",
+                "community": f"r/{subreddit} (search: {query[:25]})",
                 "tier": "search",
                 "author": post.get("author", "[deleted]"),
                 "title": title,
@@ -140,4 +166,7 @@ class RedditSearchScraper:
                 "type": "post",
             }
 
-        logger.info(f"Reddit search '{query}': {count} results")
+        if count > 0:
+            logger.info(
+                f"Reddit search r/{subreddit} '{query}': {count} results"
+            )
