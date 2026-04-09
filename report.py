@@ -66,8 +66,8 @@ def validate_url(url: str, timeout: int = 8) -> dict:
 
 def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     """Generate the full HTML report."""
-    # Fetch leads from last 14 days
-    all_leads = db.get_leads(days=14, limit=500)
+    # Fetch ALL leads ever collected
+    all_leads = db.get_leads(days=9999, limit=5000)
     hot_warm = [l for l in all_leads if l.get("category") in ("HOT", "WARM")]
 
     # Sort: HOT first (by score desc), then WARM (by score desc)
@@ -97,7 +97,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     for lead in hot_warm:
         lead_rows.append(_render_lead_card(lead, url_status))
 
-    cards_html = "\n".join(lead_rows) if lead_rows else '<p class="empty">No leads found in the last 14 days. The scanner runs every 30 minutes.</p>'
+    cards_html = "\n".join(lead_rows) if lead_rows else '<p class="empty">No leads found yet. The scanner runs every 30 minutes — check back soon.</p>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
