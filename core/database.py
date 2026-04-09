@@ -1,11 +1,12 @@
 """
 Database Layer
 ==============
-SQLite database for storing leads, tracking duplicates, and providing
-statistics for the dashboard.
+SQLite database for storing leads, tracking duplicates, outreach history,
+and providing statistics for the dashboard.
 
 Tables:
 - leads: All discovered leads with classification data
+- outreach: Every message sent to a lead (email, DM, comment, etc.)
 - scan_logs: Record of each scan run for system health monitoring
 - stats_daily: Aggregated daily statistics for the dashboard
 """
@@ -97,6 +98,23 @@ class LeadDatabase:
                     top_keyword TEXT
                 );
 
+                -- Outreach tracking: every message you send to a lead
+                CREATE TABLE IF NOT EXISTS outreach (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lead_id INTEGER NOT NULL,
+                    channel TEXT NOT NULL,
+                    subject TEXT,
+                    message_text TEXT,
+                    sequence_number INTEGER DEFAULT 1,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'sent',
+                    reply_received BOOLEAN DEFAULT 0,
+                    reply_text TEXT,
+                    reply_at TIMESTAMP,
+                    notes TEXT,
+                    FOREIGN KEY (lead_id) REFERENCES leads(id)
+                );
+
                 -- Indexes for fast lookups
                 CREATE INDEX IF NOT EXISTS idx_leads_post_id ON leads(post_id);
                 CREATE INDEX IF NOT EXISTS idx_leads_category ON leads(category);
@@ -105,6 +123,8 @@ class LeadDatabase:
                 CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(score DESC);
                 CREATE INDEX IF NOT EXISTS idx_scan_logs_time ON scan_logs(scan_time);
                 CREATE INDEX IF NOT EXISTS idx_stats_date ON stats_daily(date);
+                CREATE INDEX IF NOT EXISTS idx_outreach_lead ON outreach(lead_id);
+                CREATE INDEX IF NOT EXISTS idx_outreach_sent ON outreach(sent_at);
             """)
             conn.commit()
             logger.info(f"Database initialized at {self.db_path}")
@@ -216,6 +236,158 @@ class LeadDatabase:
                 (note, lead_id)
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    # =========================================================================
+    # OUTREACH TRACKING
+    # =========================================================================
+
+    def log_outreach(self, lead_id: int, channel: str, message_text: str = "",
+                     subject: str = "", notes: str = "") -> Optional[int]:
+        """
+        Log an outreach message sent to a lead.
+        channel: 'email', 'reddit_dm', 'reddit_comment', 'linkedin', 'phone', 'other'
+        Returns the outreach ID.
+        """
+        conn = self._get_conn()
+        try:
+            # Figure out sequence number (how many messages we've sent to this lead)
+            cursor = conn.execute(
+                "SELECT COUNT(*) as cnt FROM outreach WHERE lead_id = ?",
+                (lead_id,)
+            )
+            seq = (cursor.fetchone()["cnt"] or 0) + 1
+
+            cursor = conn.execute("""
+                INSERT INTO outreach (lead_id, channel, subject, message_text,
+                                      sequence_number, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (lead_id, channel, subject, message_text, seq, notes))
+            conn.commit()
+
+            # Also mark the lead as replied
+            conn.execute(
+                "UPDATE leads SET replied = 1, replied_at = ? WHERE id = ? AND replied = 0",
+                (datetime.utcnow().isoformat(), lead_id)
+            )
+            conn.commit()
+
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def log_reply_received(self, lead_id: int, reply_text: str = ""):
+        """Record that a lead responded to our outreach."""
+        conn = self._get_conn()
+        try:
+            now = datetime.utcnow().isoformat()
+            # Update the most recent outreach record for this lead
+            conn.execute("""
+                UPDATE outreach SET reply_received = 1, reply_text = ?, reply_at = ?
+                WHERE lead_id = ? AND id = (
+                    SELECT id FROM outreach WHERE lead_id = ? ORDER BY sent_at DESC LIMIT 1
+                )
+            """, (reply_text, now, lead_id, lead_id))
+            # Also update the lead itself
+            conn.execute(
+                "UPDATE leads SET response_received = 1, response_received_at = ? WHERE id = ?",
+                (now, lead_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_outreach_history(self, lead_id: int) -> list:
+        """Get all outreach messages for a lead, newest first."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute("""
+                SELECT * FROM outreach WHERE lead_id = ?
+                ORDER BY sent_at ASC
+            """, (lead_id,))
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_leads_needing_followup(self, days_since_contact: int = 3) -> list:
+        """
+        Find leads we contacted but haven't heard back from,
+        where the last contact was >= days_since_contact days ago.
+        """
+        conn = self._get_conn()
+        try:
+            cutoff = (datetime.utcnow() - timedelta(days=days_since_contact)).isoformat()
+            cursor = conn.execute("""
+                SELECT l.*, MAX(o.sent_at) as last_contacted,
+                       COUNT(o.id) as messages_sent,
+                       MAX(o.sequence_number) as last_sequence
+                FROM leads l
+                JOIN outreach o ON o.lead_id = l.id
+                WHERE l.replied = 1
+                  AND l.response_received = 0
+                  AND l.converted = 0
+                  AND o.sent_at <= ?
+                GROUP BY l.id
+                ORDER BY MAX(o.sent_at) ASC
+            """, (cutoff,))
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_lead_by_id(self, lead_id: int) -> Optional[dict]:
+        """Get a single lead by its ID."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_pipeline_counts(self) -> dict:
+        """Get counts for each pipeline stage."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN category IN ('HOT','WARM') AND replied = 0 THEN 1 ELSE 0 END) as new_leads,
+                    SUM(CASE WHEN replied = 1 AND response_received = 0 AND converted = 0 THEN 1 ELSE 0 END) as contacted,
+                    SUM(CASE WHEN response_received = 1 AND converted = 0 THEN 1 ELSE 0 END) as in_conversation,
+                    SUM(CASE WHEN converted = 1 THEN 1 ELSE 0 END) as converted
+                FROM leads
+                WHERE category IN ('HOT', 'WARM')
+            """)
+            return dict(cursor.fetchone())
+        finally:
+            conn.close()
+
+    def get_outreach_stats(self) -> dict:
+        """Get outreach statistics."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute("""
+                SELECT
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT lead_id) as leads_contacted,
+                    SUM(CASE WHEN reply_received = 1 THEN 1 ELSE 0 END) as replies_received,
+                    COUNT(DISTINCT CASE WHEN reply_received = 1 THEN lead_id END) as leads_who_replied
+                FROM outreach
+            """)
+            row = dict(cursor.fetchone())
+
+            # Per-channel breakdown
+            cursor = conn.execute("""
+                SELECT channel, COUNT(*) as messages,
+                       COUNT(DISTINCT lead_id) as leads,
+                       SUM(CASE WHEN reply_received = 1 THEN 1 ELSE 0 END) as replies
+                FROM outreach
+                GROUP BY channel
+                ORDER BY messages DESC
+            """)
+            row["by_channel"] = [dict(r) for r in cursor.fetchall()]
+            return row
         finally:
             conn.close()
 
