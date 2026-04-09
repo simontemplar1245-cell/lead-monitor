@@ -264,12 +264,25 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     align-items: center;
   }}
   .card-link {{
+    display: inline-block;
+    padding: 6px 14px;
+    background: #1e3a5f;
     color: #60a5fa;
     text-decoration: none;
-    font-weight: 500;
+    font-weight: 600;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    transition: background 0.2s;
   }}
   .card-link:hover {{
-    text-decoration: underline;
+    background: #2563eb;
+    color: #fff;
+  }}
+  .card-role {{
+    font-size: 0.88rem;
+    color: #93c5fd;
+    margin-bottom: 4px;
+    font-weight: 500;
   }}
   .url-ok {{ color: #4ade80; }}
   .url-bad {{ color: #f87171; }}
@@ -438,9 +451,11 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         link_html = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">Open original &rarr;</a>{url_indicator}'
 
     # For job postings, show company + role clearly
+    role_html = ""
     if platform == "jobs":
         company_line = author
-        title_line = title
+        title_line = ""
+        role_html = f'<div class="card-role">Role: {title}</div>'
     else:
         company_line = f"{community}"
         title_line = title
@@ -482,6 +497,7 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     <div class="card-top">
       <div>
         <div class="card-company">{company_line}</div>
+        {role_html}
         <div class="card-title">{title_line}</div>
       </div>
       <div style="text-align:right;white-space:nowrap;">
@@ -491,9 +507,9 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     </div>
     <div class="card-summary">{summary}</div>
     <div class="card-meta">
-      {link_html}
       <span>Score: {score:.0%} <span class="score-bar"><span class="score-fill {score_class}" style="width:{score_pct}%"></span></span></span>
       <span>{time_str}</span>
+      {link_html}
     </div>{suggested_html}
   </div>"""
 
