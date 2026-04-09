@@ -86,7 +86,8 @@ class NtfyNotifier:
 
         # --- Build the notification body (compact, inline) ---
         title = f"Lead Report: {len(hot)} HOT, {len(warm)} WARM ({total} total)"
-        body_lines = [f"Found {total} leads this scan.\n"]
+        dashboard_url = "https://simontemplar1245-cell.github.io/lead-monitor/"
+        body_lines = [f"Found {total} leads this scan.\nDashboard: {dashboard_url}\n"]
 
         for i, lead in enumerate(leads[:MAX_INLINE_LEADS]):
             body_lines.append(self._format_lead_compact(lead, i + 1))
@@ -102,6 +103,7 @@ class NtfyNotifier:
         # --- Decide delivery method ---
         priority = 5 if hot else 3
         tags = "fire" if hot else "zap"
+        click_url = "https://simontemplar1245-cell.github.io/lead-monitor/"
 
         if total > MAX_INLINE_LEADS:
             # Many leads → attach a full report file
@@ -113,6 +115,7 @@ class NtfyNotifier:
                 message=body[:1024],  # ntfy Message header limit
                 priority=priority,
                 tags=tags,
+                click_url=click_url,
             )
         else:
             # Few leads → all fit in one notification body
@@ -121,6 +124,7 @@ class NtfyNotifier:
                 title=title,
                 priority=priority,
                 tags=tags,
+                click_url=click_url,
             )
 
         logger.info(
@@ -135,7 +139,8 @@ class NtfyNotifier:
     # =========================================================================
 
     def send_message(self, text: str, title: str = "Lead Monitor",
-                     priority: int = 3, tags: str = "") -> bool:
+                     priority: int = 3, tags: str = "",
+                     click_url: str = "") -> bool:
         """Send a plain-text push notification via ntfy.sh."""
         if not self.enabled:
             logger.info(f"[DRY RUN] Would send ntfy message: {title} - {text[:100]}...")
@@ -148,6 +153,8 @@ class NtfyNotifier:
         }
         if tags:
             headers["Tags"] = tags
+        if click_url:
+            headers["Click"] = click_url
 
         # Truncate if too long (ntfy has 4096 byte limit for message body)
         if len(text) > 3900:
@@ -166,7 +173,8 @@ class NtfyNotifier:
 
     def _send_with_attachment(self, filename: str, file_content: str,
                               title: str, message: str,
-                              priority: int = 3, tags: str = "") -> bool:
+                              priority: int = 3, tags: str = "",
+                              click_url: str = "") -> bool:
         """
         Send a notification with a downloadable file attachment.
         ntfy.sh hosts the file temporarily (~12 hours on the free tier).
@@ -188,6 +196,8 @@ class NtfyNotifier:
         }
         if tags:
             headers["Tags"] = tags
+        if click_url:
+            headers["Click"] = click_url
 
         try:
             response = requests.put(

@@ -48,6 +48,11 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   scan:
     runs-on: ubuntu-latest
@@ -121,6 +126,10 @@ jobs:
           path: data/leads.db
           key: lead-monitor-db-${{ github.run_id }}
 
+      # Generate the leads dashboard HTML (validates URLs too)
+      - name: Generate leads dashboard
+        run: python report.py --validate --output _site
+
       # Save logs for debugging
       - name: Upload logs
         uses: actions/upload-artifact@v4
@@ -129,3 +138,26 @@ jobs:
           name: scan-logs-${{ github.run_id }}
           path: data/monitor.log
           retention-days: 7
+
+      # Deploy dashboard to GitHub Pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        if: always()
+        with:
+          path: _site
+
+  # Deploy to GitHub Pages (separate job - requires pages permission)
+  deploy:
+    needs: scan
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
