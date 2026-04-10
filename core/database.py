@@ -66,7 +66,13 @@ class LeadDatabase:
                     response_received_at TIMESTAMP,
                     converted BOOLEAN DEFAULT 0,
                     converted_at TIMESTAMP,
-                    notes TEXT
+                    notes TEXT,
+
+                    -- Contact enrichment (filled in by core/enricher.py)
+                    contact_email TEXT,
+                    contact_phone TEXT,
+                    contact_website TEXT,
+                    enriched_at TIMESTAMP
                 );
 
                 CREATE TABLE IF NOT EXISTS scan_logs (
@@ -127,6 +133,21 @@ class LeadDatabase:
                 CREATE INDEX IF NOT EXISTS idx_outreach_sent ON outreach(sent_at);
             """)
             conn.commit()
+
+            # Migration: add contact-enrichment columns to existing DBs
+            existing_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(leads)").fetchall()
+            }
+            for col, ddl in (
+                ("contact_email",   "ALTER TABLE leads ADD COLUMN contact_email TEXT"),
+                ("contact_phone",   "ALTER TABLE leads ADD COLUMN contact_phone TEXT"),
+                ("contact_website", "ALTER TABLE leads ADD COLUMN contact_website TEXT"),
+                ("enriched_at",     "ALTER TABLE leads ADD COLUMN enriched_at TIMESTAMP"),
+            ):
+                if col not in existing_cols:
+                    conn.execute(ddl)
+            conn.commit()
+
             logger.info(f"Database initialized at {self.db_path}")
         finally:
             conn.close()
@@ -224,6 +245,45 @@ class LeadDatabase:
                 (datetime.utcnow().isoformat(), lead_id)
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def update_contact_info(self, lead_id: int, email: str = "",
+                            phone: str = "", website: str = ""):
+        """Store enriched contact info on a lead."""
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                """UPDATE leads
+                   SET contact_email = COALESCE(NULLIF(?, ''), contact_email),
+                       contact_phone = COALESCE(NULLIF(?, ''), contact_phone),
+                       contact_website = COALESCE(NULLIF(?, ''), contact_website),
+                       enriched_at = ?
+                   WHERE id = ?""",
+                (email, phone, website, datetime.utcnow().isoformat(), lead_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_leads_to_enrich(self, limit: int = 50) -> list:
+        """
+        HOT/WARM leads that haven't been enriched yet.
+        We only enrich the high-value ones to keep network calls bounded.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                """SELECT * FROM leads
+                   WHERE enriched_at IS NULL
+                     AND category IN ('HOT', 'WARM')
+                   ORDER BY
+                     CASE category WHEN 'HOT' THEN 0 ELSE 1 END,
+                     score DESC
+                   LIMIT ?""",
+                (limit,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
         finally:
             conn.close()
 

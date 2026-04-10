@@ -373,6 +373,16 @@ def run_full_scan(test_mode: bool = False):
     all_stats["jobs"] = run_jobs_scan(db, classifier, notifier, test_mode)
 
     # =========================================================================
+    # ENRICH HOT/WARM leads with contact info (email/phone/website)
+    # =========================================================================
+    try:
+        from core.enricher import enrich_pending_leads
+        logger.info("--- Enriching leads with contact info ---")
+        enrich_pending_leads(db, limit=30)
+    except Exception as e:
+        logger.warning(f"Enrichment skipped due to error: {e}")
+
+    # =========================================================================
     # SEND ONE DIGEST NOTIFICATION with all buffered leads
     # =========================================================================
     if not test_mode:

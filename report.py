@@ -13,6 +13,7 @@ Usage:
 
 import sys
 import os
+import re
 import argparse
 import logging
 from datetime import datetime, timedelta
@@ -764,6 +765,11 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     contact_badge = ""
     contact_hint = ""
 
+    # Contact info pulled in by core/enricher.py (may be empty strings)
+    contact_email = (lead.get("contact_email") or "").strip()
+    contact_phone = (lead.get("contact_phone") or "").strip()
+    contact_website = (lead.get("contact_website") or "").strip()
+
     if platform == "jobs":
         # Jobs are apply-only on Indeed/LinkedIn. You cannot message the employer
         # through the job board itself. But the business almost always has a
@@ -786,16 +792,31 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         # Regular Google (fallback for website/email discovery)
         google_url = f"https://www.google.com/search?q={quote_plus(company_name + ' contact')}"
 
-        primary_link = f'<a class="card-link card-link-primary" href="{maps_url}" target="_blank" rel="noopener">📞 Call via Google Maps</a>'
+        # Direct-action buttons appear FIRST when enrichment found something
+        direct_links = ""
+        if contact_email:
+            mailto_subject = quote_plus(f"Quick question — {company_name}")
+            mailto_body = quote_plus(_fallback_pitch(lead))
+            mailto_url = f"mailto:{contact_email}?subject={mailto_subject}&body={mailto_body}"
+            direct_links += f'<a class="card-link card-link-primary" href="{mailto_url}">✉️ Email {escape(contact_email)}</a>'
+        if contact_phone:
+            tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
+            direct_links += f'<a class="card-link card-link-primary" href="{tel_url}">📞 Call {escape(contact_phone)}</a>'
+        if contact_website:
+            direct_links += f'<a class="card-link" href="{escape(contact_website)}" target="_blank" rel="noopener">🌐 Website</a>'
+
+        # Fallback search buttons (still useful when enrichment is empty
+        # or as backup)
+        primary_link = f'<a class="card-link{" card-link-primary" if not direct_links else ""}" href="{maps_url}" target="_blank" rel="noopener">📍 Maps</a>'
         linkedin_link = f'<a class="card-link" href="{linkedin_url}" target="_blank" rel="noopener">LinkedIn</a>'
         facebook_link = f'<a class="card-link" href="{facebook_url}" target="_blank" rel="noopener">Facebook</a>'
-        google_link = f'<a class="card-link" href="{google_url}" target="_blank" rel="noopener">Website</a>'
+        google_link = f'<a class="card-link" href="{google_url}" target="_blank" rel="noopener">Google</a>'
 
         secondary_link = ""
         if url and url != "N/A":
             secondary_link = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">Job posting</a>{url_indicator}'
 
-        link_html = primary_link + linkedin_link + facebook_link + google_link + secondary_link
+        link_html = direct_links + primary_link + linkedin_link + facebook_link + google_link + secondary_link
 
         contact_hint = (
             '<div class="contact-hint">'
@@ -812,8 +833,26 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         # Direct-contact platforms: Reddit, HN, Bluesky, forums
         contact_badge = '<span class="badge badge-direct" title="You can reply or DM directly on this platform">DIRECT</span>'
 
+        # If enrichment found an email/phone in their post body or HN profile,
+        # surface it FIRST as a real contact action
+        direct_links = ""
+        if contact_email:
+            from urllib.parse import quote_plus
+            mailto_subject = quote_plus("Saw your post")
+            mailto_body = quote_plus(_fallback_pitch(lead))
+            mailto_url = f"mailto:{contact_email}?subject={mailto_subject}&body={mailto_body}"
+            direct_links += f'<a class="card-link card-link-primary" href="{mailto_url}">✉️ Email {escape(contact_email)}</a>'
+        if contact_phone:
+            tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
+            direct_links += f'<a class="card-link card-link-primary" href="{tel_url}">📞 {escape(contact_phone)}</a>'
+        if contact_website:
+            direct_links += f'<a class="card-link" href="{escape(contact_website)}" target="_blank" rel="noopener">🌐 Website</a>'
+
         if url and url != "N/A":
-            link_html = f'<a class="card-link card-link-primary" href="{escape(url)}" target="_blank" rel="noopener">Open post & reply &rarr;</a>{url_indicator}'
+            reply_link = f'<a class="card-link{" card-link-primary" if not direct_links else ""}" href="{escape(url)}" target="_blank" rel="noopener">Open post &amp; reply &rarr;</a>{url_indicator}'
+            link_html = direct_links + reply_link
+        else:
+            link_html = direct_links
 
         if platform in ("reddit", "reddit_search"):
             contact_hint = (
