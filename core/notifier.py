@@ -435,7 +435,7 @@ class NtfyNotifier:
             f"Filtered cold: {total_cold}\n"
             f"Duration: {duration:.0f}s\n\n"
             f"Sources:\n{per_platform_text}\n\n"
-            f"System is running. Next scan in ~30 minutes."
+            f"System is running. Next scan in ~1 hour."
         )
         return self.send_message(
             text=message,

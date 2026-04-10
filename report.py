@@ -97,7 +97,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     for lead in hot_warm:
         lead_rows.append(_render_lead_card(lead, url_status))
 
-    cards_html = "\n".join(lead_rows) if lead_rows else '<p class="empty">No leads found yet. The scanner runs every 30 minutes — check back soon.</p>'
+    cards_html = "\n".join(lead_rows) if lead_rows else '<p class="empty">No leads found yet. The scanner runs every hour — check back soon.</p>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -556,7 +556,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
 </div>
 
 <div class="footer">
-  Advance AI Services Lead Monitor &middot; Auto-updates every 30 minutes<br>
+  Advance AI Services Lead Monitor &middot; Auto-updates every hour<br>
   <strong style="color:#86efac;">Direct contact (reply/DM on platform):</strong> Reddit (80+ subreddits), Hacker News, Bluesky, 8 industry forums<br>
   <strong style="color:#fcd34d;">Research needed (apply-only, cold-call the business):</strong> Indeed, LinkedIn Jobs
 </div>

@@ -17,8 +17,8 @@ name: Lead Monitor
 
 on:
   schedule:
-    # Run every 30 minutes
-    - cron: '*/30 * * * *'
+    # Run every hour
+    - cron: '0 * * * *'
     # Daily digest at 9 AM UTC
     - cron: '0 9 * * *'
 
