@@ -244,6 +244,16 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     color: #93c5fd;
     margin-left: 6px;
   }}
+  .badge-direct {{
+    background: #14532d;
+    color: #86efac;
+    margin-left: 6px;
+  }}
+  .badge-research {{
+    background: #78350f;
+    color: #fcd34d;
+    margin-left: 6px;
+  }}
   .card-title {{
     font-size: 0.9rem;
     color: #cbd5e1;
@@ -273,10 +283,31 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     border-radius: 6px;
     font-size: 0.85rem;
     transition: background 0.2s;
+    margin-right: 6px;
   }}
   .card-link:hover {{
     background: #2563eb;
     color: #fff;
+  }}
+  .card-link-primary {{
+    background: #14532d;
+    color: #86efac;
+  }}
+  .card-link-primary:hover {{
+    background: #16a34a;
+    color: #fff;
+  }}
+  .contact-hint {{
+    font-size: 0.78rem;
+    color: #94a3b8;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #0f172a;
+    border-radius: 6px;
+    border-left: 3px solid #475569;
+  }}
+  .contact-hint strong {{
+    color: #cbd5e1;
   }}
   .card-role {{
     font-size: 0.88rem;
@@ -369,7 +400,9 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
   <button class="filter-btn active" onclick="filterLeads('all')">All</button>
   <button class="filter-btn" onclick="filterLeads('hot')">HOT Only</button>
   <button class="filter-btn" onclick="filterLeads('warm')">WARM Only</button>
-  <button class="filter-btn" onclick="filterLeads('jobs')">Job Postings</button>
+  <button class="filter-btn" onclick="filterLeads('direct')">Direct Contact</button>
+  <button class="filter-btn" onclick="filterLeads('research')">Research Needed</button>
+  <button class="filter-btn" onclick="filterLeads('jobs')">Indeed/LinkedIn</button>
   <button class="filter-btn" onclick="filterLeads('reddit')">Reddit</button>
 </div>
 
@@ -379,7 +412,8 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
 
 <div class="footer">
   Advance AI Services Lead Monitor &middot; Auto-updates every 30 minutes<br>
-  Leads from: Indeed, LinkedIn, Reddit (80+ subreddits), Hacker News, Bluesky, 8 industry forums
+  <strong style="color:#86efac;">Direct contact (reply/DM on platform):</strong> Reddit (80+ subreddits), Hacker News, Bluesky, 8 industry forums<br>
+  <strong style="color:#fcd34d;">Research needed (apply-only, cold-call the business):</strong> Indeed, LinkedIn Jobs
 </div>
 
 <script>
@@ -387,14 +421,27 @@ function filterLeads(type) {{
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
   document.querySelectorAll('.card').forEach(card => {{
+    const p = card.dataset.platform;
     if (type === 'all') {{
       card.style.display = '';
     }} else if (type === 'hot') {{
       card.style.display = card.dataset.category === 'HOT' ? '' : 'none';
     }} else if (type === 'warm') {{
       card.style.display = card.dataset.category === 'WARM' ? '' : 'none';
+    }} else if (type === 'direct') {{
+      // Direct-contact platforms: Reddit, HN, Bluesky, forums
+      const isDirect = (p === 'reddit' || p === 'reddit_search' ||
+                        p === 'hackernews' || p === 'bluesky' || p === 'forum');
+      card.style.display = isDirect ? '' : 'none';
+    }} else if (type === 'research') {{
+      // Research-needed: job postings
+      card.style.display = p === 'jobs' ? '' : 'none';
+    }} else if (type === 'jobs') {{
+      card.style.display = p === 'jobs' ? '' : 'none';
+    }} else if (type === 'reddit') {{
+      card.style.display = (p === 'reddit' || p === 'reddit_search') ? '' : 'none';
     }} else {{
-      card.style.display = card.dataset.platform === type ? '' : 'none';
+      card.style.display = p === type ? '' : 'none';
     }}
   }});
 }}
@@ -445,10 +492,80 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         else:
             url_indicator = f' <span class="url-bad" title="{escape(vs["reason"])}">&#10007;</span>'
 
-    # Link button
+    # ========================================================================
+    # CONTACT STRATEGY per platform — critical for actually reaching the lead
+    # ========================================================================
+    # Direct-contact platforms: Reddit, HN, Bluesky, forums (comment/DM free)
+    # Research-needed platforms: Indeed/LinkedIn jobs (apply-only, no employer DM)
+    # ========================================================================
     link_html = ""
-    if url and url != "N/A":
-        link_html = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">Open original &rarr;</a>{url_indicator}'
+    contact_badge = ""
+    contact_hint = ""
+
+    if platform == "jobs":
+        # Jobs are apply-only. User must look up company contact info separately.
+        contact_badge = '<span class="badge badge-research" title="You must find the company contact info separately">RESEARCH</span>'
+
+        # Primary action: Google search for the company's website/contact info
+        # This is the ACTUAL path to reaching them
+        from urllib.parse import quote_plus
+        company_name = lead.get("author") or ""
+        google_query = quote_plus(f'"{company_name}" contact phone')
+        google_url = f"https://www.google.com/search?q={google_query}"
+
+        primary_link = f'<a class="card-link card-link-primary" href="{google_url}" target="_blank" rel="noopener">Find company contact &rarr;</a>'
+
+        # Secondary: link back to the original job posting for salary/details
+        secondary_link = ""
+        if url and url != "N/A":
+            secondary_link = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">View job posting</a>{url_indicator}'
+
+        link_html = primary_link + secondary_link
+
+        contact_hint = (
+            '<div class="contact-hint">'
+            '<strong>How to contact:</strong> Indeed/LinkedIn job postings are apply-only '
+            '— you cannot message the employer directly. Click <em>Find company contact</em> '
+            'to Google the business and find their website, phone, or email. Then cold-call '
+            'or email them with the pitch.'
+            '</div>'
+        )
+    else:
+        # Direct-contact platforms: Reddit, HN, Bluesky, forums
+        contact_badge = '<span class="badge badge-direct" title="You can reply or DM directly on this platform">DIRECT</span>'
+
+        if url and url != "N/A":
+            link_html = f'<a class="card-link card-link-primary" href="{escape(url)}" target="_blank" rel="noopener">Open post & reply &rarr;</a>{url_indicator}'
+
+        if platform in ("reddit", "reddit_search"):
+            contact_hint = (
+                '<div class="contact-hint">'
+                '<strong>How to contact:</strong> Click the link to open the Reddit post, '
+                'then reply publicly (helpful first, pitch last) or DM the author directly. '
+                'Check their post history first — long-time users spot spam instantly.'
+                '</div>'
+            )
+        elif platform == "hackernews":
+            contact_hint = (
+                '<div class="contact-hint">'
+                '<strong>How to contact:</strong> Reply in the HN thread, or click the author\'s '
+                'username on HN — their profile often lists an email address.'
+                '</div>'
+            )
+        elif platform == "bluesky":
+            contact_hint = (
+                '<div class="contact-hint">'
+                '<strong>How to contact:</strong> Reply publicly on Bluesky. '
+                'DMs only work if they follow you back.'
+                '</div>'
+            )
+        elif platform == "forum":
+            contact_hint = (
+                '<div class="contact-hint">'
+                '<strong>How to contact:</strong> Reply in the forum thread, '
+                'or create a free account and PM the user directly.'
+                '</div>'
+            )
 
     # For job postings, show company + role clearly
     role_html = ""
@@ -477,7 +594,7 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     elif body:
         summary = escape(body[:200]) + ("..." if len(body) > 200 else "")
 
-    # Source label
+    # Source label — show the ACTUAL board (Indeed vs LinkedIn vs r/sub etc.)
     source_map = {
         "jobs": "Job Board",
         "reddit": "Reddit",
@@ -487,8 +604,15 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         "forum": "Forum",
     }
     source_label = source_map.get(platform, platform)
-    if platform in ("reddit", "reddit_search") and community:
+    if platform == "jobs" and community:
+        # community is stored like "indeed (United States)" — extract the board name
+        board = community.split(" (")[0].strip().title()
+        if board:
+            source_label = board
+    elif platform in ("reddit", "reddit_search") and community:
         source_label = f"r/{community}"
+    elif platform == "forum" and community:
+        source_label = community
 
     score_pct = int(score * 100)
 
@@ -503,14 +627,16 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
       <div style="text-align:right;white-space:nowrap;">
         <span class="badge {badge_class}">{category}</span>
         <span class="badge badge-source">{source_label}</span>
+        {contact_badge}
       </div>
     </div>
     <div class="card-summary">{summary}</div>
     <div class="card-meta">
       <span>Score: {score:.0%} <span class="score-bar"><span class="score-fill {score_class}" style="width:{score_pct}%"></span></span></span>
       <span>{time_str}</span>
-      {link_html}
-    </div>{suggested_html}
+    </div>
+    <div style="margin-top:10px;">{link_html}</div>
+    {contact_hint}{suggested_html}
   </div>"""
 
 
