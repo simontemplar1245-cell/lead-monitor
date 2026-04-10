@@ -362,6 +362,106 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     border-top: 1px solid #1e293b;
     margin-top: 30px;
   }}
+  /* Setup section (collapsible signup links) */
+  .setup-wrap {{
+    max-width: 900px;
+    margin: 16px auto 0;
+    padding: 0 20px;
+  }}
+  .setup-toggle {{
+    width: 100%;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s;
+  }}
+  .setup-toggle:hover {{ background: #334155; }}
+  .setup-toggle::after {{ content: ' ▼'; float: right; opacity: 0.6; }}
+  .setup-toggle.open::after {{ content: ' ▲'; }}
+  .setup-body {{
+    display: none;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 16px;
+    margin-top: -8px;
+  }}
+  .setup-body.open {{ display: block; }}
+  .setup-body p {{ font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px; }}
+  .signup-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }}
+  .signup-item {{
+    display: block;
+    padding: 10px 14px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #e2e8f0;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }}
+  .signup-item:hover {{
+    border-color: #60a5fa;
+    background: #1e3a5f;
+  }}
+  .signup-item strong {{ display: block; color: #f8fafc; margin-bottom: 2px; }}
+  .signup-item span {{ color: #64748b; font-size: 0.78rem; }}
+  /* Copy button + contacted state */
+  .copy-btn {{
+    display: inline-block;
+    padding: 5px 12px;
+    background: #1e3a5f;
+    color: #93c5fd;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 6px;
+    transition: all 0.2s;
+  }}
+  .copy-btn:hover {{ background: #2563eb; color: #fff; }}
+  .copy-btn.copied {{ background: #14532d; color: #86efac; border-color: #14532d; }}
+  .mark-btn {{
+    display: inline-block;
+    padding: 5px 12px;
+    background: transparent;
+    color: #94a3b8;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 6px;
+    transition: all 0.2s;
+  }}
+  .mark-btn:hover {{ background: #334155; color: #f8fafc; }}
+  .card.contacted {{ opacity: 0.45; }}
+  .card.contacted .mark-btn {{
+    background: #14532d;
+    color: #86efac;
+    border-color: #14532d;
+  }}
+  .hidden-msg {{ position: absolute; left: -9999px; top: -9999px; }}
+  .suggested-row {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }}
   @media (max-width: 600px) {{
     .pipeline {{ gap: 8px; }}
     .pipe-box {{ min-width: 80px; padding: 10px 12px; }}
@@ -396,6 +496,50 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
   </div>
 </div>
 
+<div class="setup-wrap">
+  <button class="setup-toggle" onclick="toggleSetup()">⚙️  One-time setup — accounts you need to create</button>
+  <div class="setup-body" id="setup-body">
+    <p>To actually contact leads you need accounts on these platforms. All free. Create them once and you're set.</p>
+    <div class="signup-grid">
+      <a class="signup-item" href="https://accounts.google.com/signup" target="_blank" rel="noopener">
+        <strong>Google / Gmail</strong>
+        <span>For Maps, cold email, signing up everywhere else</span>
+      </a>
+      <a class="signup-item" href="https://www.linkedin.com/signup" target="_blank" rel="noopener">
+        <strong>LinkedIn</strong>
+        <span>Connection requests with notes (free, no Premium)</span>
+      </a>
+      <a class="signup-item" href="https://www.facebook.com/r.php" target="_blank" rel="noopener">
+        <strong>Facebook</strong>
+        <span>DM business pages directly</span>
+      </a>
+      <a class="signup-item" href="https://www.reddit.com/register" target="_blank" rel="noopener">
+        <strong>Reddit</strong>
+        <span>Reply to posts and DM users (age account 1+ week first)</span>
+      </a>
+      <a class="signup-item" href="https://news.ycombinator.com/login" target="_blank" rel="noopener">
+        <strong>Hacker News</strong>
+        <span>Reply in threads, see profile emails</span>
+      </a>
+      <a class="signup-item" href="https://bsky.app" target="_blank" rel="noopener">
+        <strong>Bluesky</strong>
+        <span>Public replies (DMs need follow-back)</span>
+      </a>
+      <a class="signup-item" href="https://hunter.io/users/sign_up" target="_blank" rel="noopener">
+        <strong>Hunter.io (optional)</strong>
+        <span>25 free email lookups/mo for cold email</span>
+      </a>
+      <a class="signup-item" href="https://wa.me/" target="_blank" rel="noopener">
+        <strong>WhatsApp Business</strong>
+        <span>Many SMBs use WhatsApp — message them once you have their phone</span>
+      </a>
+    </div>
+    <p style="margin-top:14px;font-size:0.78rem;">
+      <strong style="color:#cbd5e1;">Workflow:</strong> open a lead → click <em>Copy pitch</em> → click the platform button (LinkedIn / Facebook / Maps) → paste &amp; send → click <em>Mark contacted</em>.
+    </p>
+  </div>
+</div>
+
 <div class="filters">
   <button class="filter-btn active" onclick="filterLeads('all')">All</button>
   <button class="filter-btn" onclick="filterLeads('hot')">HOT Only</button>
@@ -404,6 +548,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
   <button class="filter-btn" onclick="filterLeads('research')">Research Needed</button>
   <button class="filter-btn" onclick="filterLeads('jobs')">Indeed/LinkedIn</button>
   <button class="filter-btn" onclick="filterLeads('reddit')">Reddit</button>
+  <button class="filter-btn" onclick="filterLeads('uncontacted')">Hide Contacted</button>
 </div>
 
 <div class="container" id="leads">
@@ -417,39 +562,156 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
 </div>
 
 <script>
-function filterLeads(type) {{
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+// ----- Setup section toggle -----
+function toggleSetup() {{
+  const body = document.getElementById('setup-body');
+  const btn = document.querySelector('.setup-toggle');
+  body.classList.toggle('open');
+  btn.classList.toggle('open');
+}}
+
+// ----- Copy pitch to clipboard -----
+function copyPitch(leadId, btn) {{
+  const ta = document.getElementById('msg-' + leadId);
+  if (!ta) return;
+  // Decode HTML entities by reading textarea value
+  const text = ta.value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
+  if (navigator.clipboard && navigator.clipboard.writeText) {{
+    navigator.clipboard.writeText(text).then(() => flashCopied(btn));
+  }} else {{
+    // Fallback for older browsers
+    ta.style.position = 'fixed';
+    ta.style.left = '0';
+    ta.style.top = '0';
+    ta.select();
+    try {{ document.execCommand('copy'); flashCopied(btn); }} catch (e) {{}}
+    ta.style.position = 'absolute';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+  }}
+}}
+function flashCopied(btn) {{
+  const orig = btn.innerHTML;
+  btn.innerHTML = '✓ Copied!';
+  btn.classList.add('copied');
+  setTimeout(() => {{
+    btn.innerHTML = orig;
+    btn.classList.remove('copied');
+  }}, 1800);
+}}
+
+// ----- Mark contacted (persisted in localStorage) -----
+const CONTACTED_KEY = 'leadmonitor_contacted_v1';
+function getContacted() {{
+  try {{
+    return new Set(JSON.parse(localStorage.getItem(CONTACTED_KEY) || '[]'));
+  }} catch (e) {{ return new Set(); }}
+}}
+function saveContacted(set) {{
+  localStorage.setItem(CONTACTED_KEY, JSON.stringify([...set]));
+}}
+function toggleContacted(leadId, btn) {{
+  const set = getContacted();
+  const card = btn.closest('.card');
+  if (set.has(leadId)) {{
+    set.delete(leadId);
+    card.classList.remove('contacted');
+    btn.innerHTML = '✓ Mark contacted';
+  }} else {{
+    set.add(leadId);
+    card.classList.add('contacted');
+    btn.innerHTML = '✓ Contacted';
+  }}
+  saveContacted(set);
+}}
+function initContacted() {{
+  const set = getContacted();
   document.querySelectorAll('.card').forEach(card => {{
-    const p = card.dataset.platform;
-    if (type === 'all') {{
-      card.style.display = '';
-    }} else if (type === 'hot') {{
-      card.style.display = card.dataset.category === 'HOT' ? '' : 'none';
-    }} else if (type === 'warm') {{
-      card.style.display = card.dataset.category === 'WARM' ? '' : 'none';
-    }} else if (type === 'direct') {{
-      // Direct-contact platforms: Reddit, HN, Bluesky, forums
-      const isDirect = (p === 'reddit' || p === 'reddit_search' ||
-                        p === 'hackernews' || p === 'bluesky' || p === 'forum');
-      card.style.display = isDirect ? '' : 'none';
-    }} else if (type === 'research') {{
-      // Research-needed: job postings
-      card.style.display = p === 'jobs' ? '' : 'none';
-    }} else if (type === 'jobs') {{
-      card.style.display = p === 'jobs' ? '' : 'none';
-    }} else if (type === 'reddit') {{
-      card.style.display = (p === 'reddit' || p === 'reddit_search') ? '' : 'none';
-    }} else {{
-      card.style.display = p === type ? '' : 'none';
+    const id = parseInt(card.dataset.id, 10);
+    if (set.has(id)) {{
+      card.classList.add('contacted');
+      const btn = card.querySelector('.mark-btn');
+      if (btn) btn.innerHTML = '✓ Contacted';
     }}
   }});
 }}
+
+// ----- Filter leads -----
+let currentFilter = 'all';
+function filterLeads(type) {{
+  currentFilter = type;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  const set = getContacted();
+  document.querySelectorAll('.card').forEach(card => {{
+    const p = card.dataset.platform;
+    const id = parseInt(card.dataset.id, 10);
+    let show = true;
+    if (type === 'hot')         show = card.dataset.category === 'HOT';
+    else if (type === 'warm')   show = card.dataset.category === 'WARM';
+    else if (type === 'direct') show = (p === 'reddit' || p === 'reddit_search' || p === 'hackernews' || p === 'bluesky' || p === 'forum');
+    else if (type === 'research') show = p === 'jobs';
+    else if (type === 'jobs')   show = p === 'jobs';
+    else if (type === 'reddit') show = (p === 'reddit' || p === 'reddit_search');
+    else if (type === 'uncontacted') show = !set.has(id);
+    card.style.display = show ? '' : 'none';
+  }});
+}}
+
+document.addEventListener('DOMContentLoaded', initContacted);
 </script>
 
 </body>
 </html>"""
     return html
+
+
+def _fallback_pitch(lead: dict) -> str:
+    """
+    Generate a short cold-outreach pitch when the classifier didn't supply one.
+    Kept under ~100 words (the sweet spot for cold message reply rates).
+    """
+    platform = lead.get("platform", "")
+    company = (lead.get("author") or "there").strip()
+    role = (lead.get("title") or "").strip()
+    community = (lead.get("community") or "").strip()
+
+    if platform == "jobs":
+        # Cold outreach to a business posting a phone/reception role
+        role_line = f"a {role}" if role else "a phone/reception role"
+        return (
+            f"Hi {company} team,\n\n"
+            f"Saw you're hiring for {role_line}. Before locking in a "
+            f"full-time hire, you might want to look at our AI receptionist "
+            f"— it answers calls 24/7, books appointments, and never misses "
+            f"a lead. Most clients spend ~$200/mo vs. paying a salary.\n\n"
+            f"Worth a 5-minute look? Happy to send a 30-second demo.\n\n"
+            f"— Advance AI Services"
+        )
+
+    # Social platforms (Reddit / HN / Bluesky / forums) — reply, not cold pitch
+    topic_hint = ""
+    body = (lead.get("body") or "").strip()
+    if "missed call" in body.lower() or "phone" in body.lower():
+        topic_hint = "missed calls and phone overflow"
+    elif "after hours" in body.lower() or "after-hours" in body.lower():
+        topic_hint = "after-hours coverage"
+    elif "receptionist" in body.lower():
+        topic_hint = "reception/front-desk workload"
+    elif "chatbot" in body.lower() or "chat bot" in body.lower():
+        topic_hint = "website chat / lead capture"
+    else:
+        topic_hint = "what you're describing"
+
+    return (
+        f"Hey — saw your post about {topic_hint}. We build AI receptionists "
+        f"and chatbots that handle exactly this: 24/7 call answering, "
+        f"appointment booking, and lead capture from your website. Most "
+        f"clients save 15+ hours/week on phone admin.\n\n"
+        f"Happy to show you a 2-min demo if you want to see how it works "
+        f"— no pressure either way.\n\n"
+        f"— Advance AI Services"
+    )
 
 
 def _render_lead_card(lead: dict, url_status: dict) -> str:
@@ -593,13 +855,28 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         company_line = f"{community}"
         title_line = title
 
-    # Suggested reply
-    suggested_html = ""
-    if suggested:
-        suggested_html = f"""
+    # Suggested outreach — use Claude's if available, otherwise generate a
+    # sensible fallback based on lead type. We need a real pitch on EVERY card
+    # so the Copy button always has something to copy.
+    pitch_text = lead.get("suggested_reply") or ""
+    if not pitch_text:
+        pitch_text = _fallback_pitch(lead)
+
+    # The version we display (HTML-escaped) and the version we copy (raw text
+    # held in a hidden textarea so navigator.clipboard.writeText gets the
+    # original characters with newlines intact).
+    pitch_display = escape(pitch_text).replace("\n", "<br>")
+    lead_id = lead.get("id", 0)
+
+    suggested_html = f"""
     <div class="suggested">
-      <strong>Suggested outreach:</strong>
-      {suggested}
+      <strong>Suggested outreach:</strong><br>
+      {pitch_display}
+      <div class="suggested-row">
+        <button class="copy-btn" onclick="copyPitch({lead_id}, this)">📋 Copy pitch</button>
+        <button class="mark-btn" onclick="toggleContacted({lead_id}, this)">✓ Mark contacted</button>
+      </div>
+      <textarea class="hidden-msg" id="msg-{lead_id}" readonly>{escape(pitch_text)}</textarea>
     </div>"""
 
     # Summary / reasoning
@@ -633,7 +910,7 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     score_pct = int(score * 100)
 
     return f"""
-  <div class="card {card_class}" data-category="{category}" data-platform="{platform}">
+  <div class="card {card_class}" data-category="{category}" data-platform="{platform}" data-id="{lead_id}">
     <div class="card-top">
       <div>
         <div class="card-company">{company_line}</div>
