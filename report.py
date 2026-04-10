@@ -503,31 +503,47 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     contact_hint = ""
 
     if platform == "jobs":
-        # Jobs are apply-only. User must look up company contact info separately.
-        contact_badge = '<span class="badge badge-research" title="You must find the company contact info separately">RESEARCH</span>'
+        # Jobs are apply-only on Indeed/LinkedIn. You cannot message the employer
+        # through the job board itself. But the business almost always has a
+        # Google Business listing, LinkedIn page, and/or Facebook page — and
+        # those DO allow direct contact. Generate links to all of them.
+        contact_badge = '<span class="badge badge-research" title="Use Maps / LinkedIn / Facebook to reach the business directly">RESEARCH</span>'
 
-        # Primary action: Google search for the company's website/contact info
-        # This is the ACTUAL path to reaching them
         from urllib.parse import quote_plus
         company_name = lead.get("author") or ""
-        google_query = quote_plus(f'"{company_name}" contact phone')
-        google_url = f"https://www.google.com/search?q={google_query}"
+        q = quote_plus(company_name)
 
-        primary_link = f'<a class="card-link card-link-primary" href="{google_url}" target="_blank" rel="noopener">Find company contact &rarr;</a>'
+        # Google Maps: gets the phone number immediately for local businesses.
+        # This is the fastest path to an actual conversation.
+        maps_url = f"https://www.google.com/maps/search/?api=1&query={q}"
+        # LinkedIn company search: find the owner/HR and send a connection
+        # request with a note (free, no Premium needed).
+        linkedin_url = f"https://www.linkedin.com/search/results/companies/?keywords={q}"
+        # Facebook Pages search: small businesses often read Page DMs daily.
+        facebook_url = f"https://www.facebook.com/search/pages/?q={q}"
+        # Regular Google (fallback for website/email discovery)
+        google_url = f"https://www.google.com/search?q={quote_plus(company_name + ' contact')}"
 
-        # Secondary: link back to the original job posting for salary/details
+        primary_link = f'<a class="card-link card-link-primary" href="{maps_url}" target="_blank" rel="noopener">📞 Call via Google Maps</a>'
+        linkedin_link = f'<a class="card-link" href="{linkedin_url}" target="_blank" rel="noopener">LinkedIn</a>'
+        facebook_link = f'<a class="card-link" href="{facebook_url}" target="_blank" rel="noopener">Facebook</a>'
+        google_link = f'<a class="card-link" href="{google_url}" target="_blank" rel="noopener">Website</a>'
+
         secondary_link = ""
         if url and url != "N/A":
-            secondary_link = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">View job posting</a>{url_indicator}'
+            secondary_link = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">Job posting</a>{url_indicator}'
 
-        link_html = primary_link + secondary_link
+        link_html = primary_link + linkedin_link + facebook_link + google_link + secondary_link
 
         contact_hint = (
             '<div class="contact-hint">'
-            '<strong>How to contact:</strong> Indeed/LinkedIn job postings are apply-only '
-            '— you cannot message the employer directly. Click <em>Find company contact</em> '
-            'to Google the business and find their website, phone, or email. Then cold-call '
-            'or email them with the pitch.'
+            '<strong>How to contact:</strong> Indeed and LinkedIn job postings are '
+            '<em>apply-only</em> — you cannot message the employer through the job board. '
+            'But you can reach the business directly through other channels:<br>'
+            '&nbsp;&nbsp;• <strong>Google Maps</strong> — fastest; local businesses list their phone number, tap to call<br>'
+            '&nbsp;&nbsp;• <strong>LinkedIn</strong> — find the owner/HR, send a connection request with a short note (free, no Premium)<br>'
+            '&nbsp;&nbsp;• <strong>Facebook</strong> — small businesses often read Page DMs daily<br>'
+            '&nbsp;&nbsp;• <strong>Website</strong> — fallback; look for a contact form or email'
             '</div>'
         )
     else:
