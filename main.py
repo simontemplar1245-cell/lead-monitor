@@ -330,6 +330,130 @@ def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
     return stats
 
 
+def run_complaint_scan(db: LeadDatabase, classifier: LeadClassifier,
+                        notifier: NtfyNotifier,
+                        test_mode: bool = False) -> dict:
+    """
+    Scrape review sites (Yelp / BBB / Trustpilot / Google Maps) via DDG
+    for 1-star complaints explicitly about phone unreachability and
+    missed calls. This is the highest-intent lead source we have: every
+    match is a business with a PUBLIC customer complaint about the exact
+    problem our AI receptionist fixes.
+    """
+    from scrapers.complaint_scraper import ComplaintScraper
+
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    start_time = time.time()
+
+    try:
+        scraper = ComplaintScraper()
+        if not scraper.enabled:
+            stats["errors"] = "Complaint scraper disabled"
+            return stats
+
+        for post_data in scraper.scan_all():
+            stats["scanned"] += 1
+            # Complaints are inherently buying signals — force WARM floor
+            # so the classifier doesn't drop them for lack of "pain" words
+            # in the short snippet.
+            _process_lead(
+                post_data, db, classifier, notifier, stats, test_mode,
+                force_warm_floor=True,
+            )
+
+    except Exception as e:
+        stats["errors"] = str(e)
+        logger.error(f"Complaint scan error: {e}", exc_info=True)
+
+    duration = time.time() - start_time
+    db.log_scan("complaints", "review sites", stats["scanned"], stats["found"],
+                stats["hot"], stats["warm"], stats["cold"],
+                stats["errors"], duration)
+
+    logger.info(
+        f"Complaint scan complete: {stats['scanned']} scanned, "
+        f"{stats['found']} leads ({stats['hot']} hot, {stats['warm']} warm) "
+        f"in {duration:.1f}s"
+    )
+    return stats
+
+
+def run_craigslist_scan(db: LeadDatabase, classifier: LeadClassifier,
+                         notifier: NtfyNotifier,
+                         test_mode: bool = False) -> dict:
+    """Scrape Craigslist small-biz / services RSS feeds across target cities."""
+    from scrapers.craigslist_scraper import CraigslistScraper
+
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    start_time = time.time()
+
+    try:
+        scraper = CraigslistScraper()
+        if not scraper.enabled:
+            stats["errors"] = "Craigslist scraper disabled"
+            return stats
+
+        for post_data in scraper.scan_all():
+            stats["scanned"] += 1
+            _process_lead(post_data, db, classifier, notifier, stats, test_mode)
+
+    except Exception as e:
+        stats["errors"] = str(e)
+        logger.error(f"Craigslist scan error: {e}", exc_info=True)
+
+    duration = time.time() - start_time
+    db.log_scan("craigslist", "all cities", stats["scanned"], stats["found"],
+                stats["hot"], stats["warm"], stats["cold"],
+                stats["errors"], duration)
+
+    logger.info(
+        f"Craigslist scan complete: {stats['scanned']} scanned, "
+        f"{stats['found']} leads ({stats['hot']} hot, {stats['warm']} warm) "
+        f"in {duration:.1f}s"
+    )
+    return stats
+
+
+def run_quora_scan(db: LeadDatabase, classifier: LeadClassifier,
+                    notifier: NtfyNotifier,
+                    test_mode: bool = False) -> dict:
+    """Find Quora questions matching buying-intent queries via DDG."""
+    from scrapers.quora_scraper import QuoraScraper
+
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    start_time = time.time()
+
+    try:
+        scraper = QuoraScraper()
+        if not scraper.enabled:
+            stats["errors"] = "Quora scraper disabled"
+            return stats
+
+        for post_data in scraper.scan_all():
+            stats["scanned"] += 1
+            # Quora questions with buying intent phrasing are warm by default
+            _process_lead(
+                post_data, db, classifier, notifier, stats, test_mode,
+                force_warm_floor=True,
+            )
+
+    except Exception as e:
+        stats["errors"] = str(e)
+        logger.error(f"Quora scan error: {e}", exc_info=True)
+
+    duration = time.time() - start_time
+    db.log_scan("quora", "quora", stats["scanned"], stats["found"],
+                stats["hot"], stats["warm"], stats["cold"],
+                stats["errors"], duration)
+
+    logger.info(
+        f"Quora scan complete: {stats['scanned']} scanned, "
+        f"{stats['found']} leads ({stats['hot']} hot, {stats['warm']} warm) "
+        f"in {duration:.1f}s"
+    )
+    return stats
+
+
 # =============================================================================
 # FULL SCAN ORCHESTRATOR
 # =============================================================================
@@ -371,6 +495,15 @@ def run_full_scan(test_mode: bool = False):
 
     logger.info("--- Jobs Scan (hiring signals) ---")
     all_stats["jobs"] = run_jobs_scan(db, classifier, notifier, test_mode)
+
+    logger.info("--- Complaint Scan (Yelp/BBB/Trustpilot review complaints) ---")
+    all_stats["complaints"] = run_complaint_scan(db, classifier, notifier, test_mode)
+
+    logger.info("--- Craigslist Scan (small biz / services RSS) ---")
+    all_stats["craigslist"] = run_craigslist_scan(db, classifier, notifier, test_mode)
+
+    logger.info("--- Quora Scan (buying-intent questions) ---")
+    all_stats["quora"] = run_quora_scan(db, classifier, notifier, test_mode)
 
     # =========================================================================
     # ENRICH HOT/WARM leads with contact info (email/phone/website)
@@ -442,6 +575,12 @@ def main():
                         help="Run Reddit cross-search only (high-intent queries)")
     parser.add_argument("--jobs", action="store_true",
                         help="Run jobs scan only (hiring signals)")
+    parser.add_argument("--complaints", action="store_true",
+                        help="Run complaint scan only (Yelp/BBB/Trustpilot)")
+    parser.add_argument("--craigslist", action="store_true",
+                        help="Run Craigslist scan only")
+    parser.add_argument("--quora", action="store_true",
+                        help="Run Quora scan only")
     parser.add_argument("--test", action="store_true",
                         help="Test mode (no notifications)")
     parser.add_argument("--digest", action="store_true", help="Send daily digest")
@@ -454,7 +593,8 @@ def main():
 
     # If specific platforms selected, run only those
     if any([args.reddit, args.forums, args.hn, args.bluesky,
-            args.reddit_search, args.jobs]):
+            args.reddit_search, args.jobs, args.complaints,
+            args.craigslist, args.quora]):
         db = LeadDatabase(DATABASE_PATH)
         classifier = LeadClassifier()
         notifier = NtfyNotifier()
@@ -471,6 +611,12 @@ def main():
             run_reddit_search_scan(db, classifier, notifier, args.test)
         if args.jobs:
             run_jobs_scan(db, classifier, notifier, args.test)
+        if args.complaints:
+            run_complaint_scan(db, classifier, notifier, args.test)
+        if args.craigslist:
+            run_craigslist_scan(db, classifier, notifier, args.test)
+        if args.quora:
+            run_quora_scan(db, classifier, notifier, args.test)
 
         # Flush any buffered leads as ONE notification
         if not args.test:

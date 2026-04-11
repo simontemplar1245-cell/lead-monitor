@@ -232,6 +232,26 @@ PAIN_KEYWORDS = {
         "driving between jobs",
         "call overflow",
         "too many inbound calls",
+        # Additional buyer-intent phrases found in 2025-2026 research
+        "phone is killing me",
+        "phones are killing me",
+        "drowning in calls",
+        "overwhelmed by calls",
+        "overwhelmed by phone",
+        "slammed with calls",
+        "buried in calls",
+        "backed up on calls",
+        "phone won't stop",
+        "phone won't stop ringing",
+        "never get a break from the phone",
+        "nonstop calls",
+        "non-stop calls",
+        "phone tag",
+        "playing phone tag",
+        "leads slipping through",
+        "leads falling through the cracks",
+        "follow up hell",
+        "follow-up hell",
     ],
 
     # =========================================================================
@@ -717,6 +737,130 @@ JOBS = {
         "map communications",
         "answering service care",
     ],
+}
+
+# =============================================================================
+# COMPLAINT SCRAPER - Yelp / BBB / Trustpilot / Google Maps via DDG
+# =============================================================================
+# Mines public review sites for SMBs that customers are actively complaining
+# about for reachability / missed calls / phone problems. A 1-star review
+# saying "called six times, never answered" is a PRE-QUALIFIED buyer for
+# our AI receptionist. These are the highest intent leads in the system.
+COMPLAINTS = {
+    "enabled": True,
+    # Review sites to search via `site:` operator. DDG indexes all of
+    # these well. We avoid scraping the sites themselves directly — just
+    # ride on DDG's index.
+    "sites": [
+        {"name": "yelp",       "domain": "yelp.com"},
+        {"name": "bbb",        "domain": "bbb.org"},
+        {"name": "trustpilot", "domain": "trustpilot.com"},
+        {"name": "google_maps","domain": "google.com/maps"},
+    ],
+    # Exact phrases to search for inside reviews. Each phrase is wrapped
+    # in quotes so DDG does a phrase match. Picked from real 1-star
+    # patterns for phone-unreachable businesses.
+    "complaint_phrases": [
+        "never answered the phone",
+        "called multiple times",
+        "nobody ever answered",
+        "can never get through",
+        "phone goes straight to voicemail",
+        "no one ever calls back",
+        "no one returned my call",
+        "couldn't reach anyone",
+        "left message after message",
+        "been trying to call",
+        "impossible to reach",
+        "unable to contact",
+    ],
+    # Business verticals to scope each search to (empty string = no scope).
+    # Each combination of phrase × vertical becomes one DDG query.
+    "verticals": [
+        "",  # catch-all
+        "dentist",
+        "plumber",
+        "HVAC",
+        "electrician",
+        "auto repair",
+        "law firm",
+        "medical clinic",
+        "veterinarian",
+        "chiropractor",
+        "salon",
+    ],
+    # Bound the load per scan
+    "max_results_per_query": 8,
+    "request_delay_seconds": 1.5,
+}
+
+# =============================================================================
+# CRAIGSLIST - RSS feeds for small biz / services sections
+# =============================================================================
+# Craigslist still has massive volume of solo service operators and small
+# business owners. RSS feeds are the officially supported interface so
+# this is completely free and ToS-compliant.
+CRAIGSLIST = {
+    "enabled": True,
+    # Top US markets by volume. Add/remove cities as you scale out.
+    "cities": [
+        "newyork",
+        "losangeles",
+        "chicago",
+        "houston",
+        "dallas",
+        "phoenix",
+        "philadelphia",
+        "sanantonio",
+        "sandiego",
+        "miami",
+        "atlanta",
+        "boston",
+        "seattle",
+        "denver",
+        "portland",
+    ],
+    # Craigslist section codes (3-letter category abbreviations)
+    # bfs = business services  |  sks = skilled trades
+    # cps = computer services  |  ths = therapeutic services
+    # lbs = labor/moving       |  bts = beauty services
+    # bbb = small biz ads      |  crs = creative services
+    "sections": [
+        "bfs",  # business services
+        "sks",  # skilled trades
+        "cps",  # computer services
+        "ths",  # therapeutic services
+        "bbb",  # small biz ads
+    ],
+    "request_delay_seconds": 1.5,
+}
+
+# =============================================================================
+# QUORA - Buying-intent questions via DDG
+# =============================================================================
+# Quora is hostile to direct scraping but DDG indexes it well. People ask
+# "best virtual receptionist for small dental practice" etc. right there,
+# and answers rank on Google for years (compounding SEO play).
+QUORA = {
+    "enabled": True,
+    # Each of these becomes a DDG query `site:quora.com "<phrase>"`.
+    # Tuned for buying-intent questions, not generic curiosity.
+    "queries": [
+        "best virtual receptionist",
+        "best ai receptionist",
+        "best answering service for small business",
+        "how to handle missed calls",
+        "how to stop missing phone calls",
+        "cheapest answering service",
+        "alternative to hiring a receptionist",
+        "ai phone answering service",
+        "ai chatbot for small business",
+        "how to answer calls when on the job",
+        "how to handle after hours calls",
+        "24/7 answering service small business",
+    ],
+    "max_results_per_query": 6,
+    "request_delay_seconds": 1.5,
 }
 
 # =============================================================================
