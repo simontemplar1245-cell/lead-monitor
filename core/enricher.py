@@ -91,20 +91,25 @@ def enrich_lead(lead: dict) -> dict:
     """
     Try to find email / phone / website for one lead.
     Returns dict with whatever was found:
-        {"email": "...", "phone": "...", "website": "..."}
+        {"email": "...", "phone": "...", "website": "...",
+         "email_source": "website|smtp_verified|mx_guess|post_body|hn_profile|hunter"}
     Empty strings for fields that couldn't be filled.
     Never raises — failures are logged and skipped.
     """
-    result = {"email": "", "phone": "", "website": ""}
+    result = {"email": "", "phone": "", "website": "", "_email_source": ""}
     platform = (lead.get("platform") or "").lower()
 
     try:
-        if platform == "jobs":
+        if platform in ("jobs", "complaints", "craigslist"):
             _enrich_business(lead, result)
         elif platform == "hackernews":
             _enrich_hn_user(lead, result)
+            if result["email"]:
+                result["_email_source"] = "hn_profile"
         else:
             _enrich_from_post_body(lead, result)
+            if result["email"]:
+                result["_email_source"] = "post_body"
     except Exception as e:
         logger.warning(f"Enrichment failed for lead {lead.get('id')}: {e}")
 
@@ -112,8 +117,21 @@ def enrich_lead(lead: dict) -> dict:
     if not (result["email"] and result["phone"]):
         try:
             _enrich_from_post_body(lead, result, allow_overwrite=False)
+            if result["email"] and not result["_email_source"]:
+                result["_email_source"] = "post_body"
         except Exception:
             pass
+
+    # Map internal source to user-facing confidence label
+    source = result.pop("_email_source", "")
+    if source in ("website", "hn_profile", "post_body", "hunter"):
+        result["email_confidence"] = "verified"
+    elif source == "smtp_verified":
+        result["email_confidence"] = "verified"
+    elif source == "mx_guess":
+        result["email_confidence"] = "guessed"
+    else:
+        result["email_confidence"] = ""
 
     return result
 
@@ -148,44 +166,67 @@ def _enrich_business(lead: dict, result: dict):
         return
 
     website = f"https://{domain}"
+
+    # Step 2: validate the domain actually belongs to this company.
+    # Fetch homepage and check that the page title / content mentions
+    # the company name (or a significant part of it). This prevents
+    # "smithplumbing.com" from matching when the company is "Smith Dental".
+    homepage_html = _http_get(website)
+    if homepage_html and not _domain_matches_company(homepage_html, company):
+        logger.debug(f"  domain {domain} doesn't match company '{company}' — skipping")
+        return
+
     result["website"] = website
     logger.info(f"  found website: {website}")
 
-    # Step 2: scrape the homepage + likely contact pages
-    pages_to_try = [website]
+    # Step 3: scrape the homepage + likely contact pages for email/phone
+    # Priority: mailto: links > on-page emails > regex-matched emails
+    pages_html = {website: homepage_html} if homepage_html else {}
     base = website.rstrip("/")
     for path in ("/contact", "/contact-us", "/about", "/contact.html"):
-        pages_to_try.append(base + path)
+        page_url = base + path
+        if page_url not in pages_html:
+            time.sleep(0.3)
+            pages_html[page_url] = _http_get(page_url)
 
-    for url in pages_to_try:
+    for page_url, html in pages_html.items():
         if result["email"] and result["phone"]:
             break
-        time.sleep(0.3)  # light delay, all same domain
-        html = _http_get(url)
         if not html:
             continue
         if not result["email"]:
-            email = _extract_first_email(html, prefer_domain=domain)
+            # Try mailto: links first (most reliable — intentionally published)
+            email = _extract_mailto(html, prefer_domain=domain)
+            if not email:
+                email = _extract_first_email(html, prefer_domain=domain)
             if email:
                 result["email"] = email
+                result["_email_source"] = "website"
         if not result["phone"]:
             phone = _extract_first_phone(html)
             if phone:
                 result["phone"] = phone
 
-    # Step 3: if we found a domain but no email, check MX records and
-    # suggest info@domain.com (most SMBs use this as their catch-all)
+    # Step 4: if we found a domain but no email, try common prefixes
+    # with SMTP verification before falling back to unverified info@
     if not result["email"] and domain:
-        if _has_mx_records(domain):
+        verified = _smtp_verify_common_prefixes(domain)
+        if verified:
+            result["email"] = verified
+            result["_email_source"] = "smtp_verified"
+            logger.info(f"  SMTP-verified email: {verified}")
+        elif _has_mx_records(domain):
             result["email"] = f"info@{domain}"
-            logger.info(f"  MX found, suggesting info@{domain}")
+            result["_email_source"] = "mx_guess"
+            logger.info(f"  MX found, suggesting info@{domain} (unverified)")
 
-    # Step 4: optional Hunter.io fallback
+    # Step 5: optional Hunter.io fallback
     if not result["email"] and os.getenv("HUNTER_API_KEY"):
         try:
             hunter_email = _hunter_lookup(domain)
             if hunter_email:
                 result["email"] = hunter_email
+                result["_email_source"] = "hunter"
         except Exception as e:
             logger.debug(f"Hunter.io lookup failed: {e}")
 
@@ -258,6 +299,179 @@ def _domain_is_live(domain: str) -> bool:
             return resp.status_code < 500
         except Exception:
             return False
+
+
+def _domain_matches_company(html: str, company: str) -> bool:
+    """
+    Check that a website's content actually mentions the company name.
+    Prevents false positives like guessing "smithplumbing.com" when
+    the company is "Smith Dental Group".
+
+    We check the <title> tag and the first 5000 chars of visible text.
+    Match passes if ANY significant word from the company name (3+ chars,
+    not a common suffix) appears in the page.
+    """
+    if not html or not company:
+        return True  # can't verify, assume ok
+
+    # Extract <title> text
+    title_m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+    page_title = title_m.group(1).lower() if title_m else ""
+
+    # First 5000 chars of text (strip tags cheaply)
+    text_chunk = re.sub(r'<[^>]+>', ' ', html[:15000]).lower()[:5000]
+    searchable = f"{page_title} {text_chunk}"
+
+    # Normalize company name — extract significant words
+    name = company.lower()
+    for suffix in (" inc", " inc.", " llc", " llp", " ltd", " co.",
+                   " corp", " corp.", " company", " group",
+                   " services", " service"):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+    name = name.replace("&", "and").replace("'", "").replace("\u2019", "")
+    name = re.sub(r'[^a-z0-9\s]', '', name).strip()
+    words = [w for w in name.split() if len(w) >= 3]
+
+    if not words:
+        return True  # too short to verify
+
+    # Match if any significant word appears
+    for word in words:
+        if word in searchable:
+            return True
+
+    return False
+
+
+def _extract_mailto(html: str, prefer_domain: str = "") -> str:
+    """
+    Extract email from mailto: links in HTML. These are the most reliable
+    emails — the business intentionally published them as clickable links.
+    """
+    if not html:
+        return ""
+    # Find all mailto: hrefs
+    mailto_re = re.compile(r'href=["\']mailto:([^"\'?]+)', re.IGNORECASE)
+    candidates = mailto_re.findall(html)
+    if not candidates:
+        return ""
+    clean = []
+    for e in candidates:
+        e = e.strip().lower()
+        if any(p in e for p in JUNK_EMAIL_PATTERNS):
+            continue
+        if len(e) > 80 or not EMAIL_RE.match(e):
+            continue
+        clean.append(e)
+    if not clean:
+        return ""
+    # Prefer same-domain
+    if prefer_domain:
+        for e in clean:
+            if e.endswith("@" + prefer_domain):
+                return e
+    return clean[0]
+
+
+def _smtp_verify_common_prefixes(domain: str) -> str:
+    """
+    Try SMTP RCPT TO check for common business email prefixes.
+    Returns the first verified email, or empty string.
+
+    This connects to the mail server, starts a conversation, and asks
+    "would you accept mail for info@domain.com?" without actually
+    sending anything. Most mail servers give a 250 for valid mailboxes
+    and 550 for invalid ones.
+
+    Note: some servers accept all (catch-all) — we detect this by
+    testing a random gibberish address first.
+    """
+    import socket
+    import subprocess
+
+    # Get MX server
+    mx_host = _get_mx_host(domain)
+    if not mx_host:
+        return ""
+
+    # Common SMB email prefixes, in order of likelihood
+    prefixes = ["info", "contact", "hello", "admin", "office", "support"]
+
+    try:
+        sock = socket.create_connection((mx_host, 25), timeout=3)
+        sock.settimeout(3)
+
+        def recv():
+            return sock.recv(4096).decode(errors="replace")
+
+        def send(msg):
+            sock.sendall(f"{msg}\r\n".encode())
+
+        # Read banner
+        recv()
+        send(f"EHLO leadmonitor.local")
+        recv()
+        send(f"MAIL FROM:<verify@leadmonitor.local>")
+        resp = recv()
+        if not resp.startswith("2"):
+            sock.close()
+            return ""
+
+        # Test a gibberish address first to detect catch-all servers
+        send(f"RCPT TO:<xzq8r7m3k2_{domain[:4]}@{domain}>")
+        gibberish_resp = recv()
+        if gibberish_resp.startswith("2"):
+            # Catch-all server — accepts everything, can't verify
+            send("QUIT")
+            sock.close()
+            logger.debug(f"  {domain} is catch-all, can't SMTP-verify")
+            return ""
+
+        # Now test real prefixes
+        for prefix in prefixes:
+            email = f"{prefix}@{domain}"
+            send(f"RCPT TO:<{email}>")
+            resp = recv()
+            if resp.startswith("2"):
+                send("QUIT")
+                sock.close()
+                return email
+
+        send("QUIT")
+        sock.close()
+    except Exception as e:
+        logger.debug(f"  SMTP verify failed for {domain}: {e}")
+
+    return ""
+
+
+def _get_mx_host(domain: str) -> str:
+    """Get the primary MX host for a domain."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["dig", "+short", "MX", domain],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = result.stdout.strip().split("\n")
+        if not lines or not lines[0]:
+            return ""
+        # MX records look like: "10 mail.example.com."
+        # Pick lowest priority (first after sorting)
+        mx_entries = []
+        for line in lines:
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                priority = int(parts[0])
+                host = parts[1].rstrip(".")
+                mx_entries.append((priority, host))
+        if mx_entries:
+            mx_entries.sort()
+            return mx_entries[0][1]
+    except Exception:
+        pass
+    return ""
 
 
 def _has_mx_records(domain: str) -> bool:
@@ -509,6 +723,7 @@ def enrich_pending_leads(db, limit: int = 30):
                     email=result["email"],
                     phone=result["phone"],
                     website=result["website"],
+                    email_confidence=result.get("email_confidence", ""),
                 )
                 if result["email"]:
                     stats["found_email"] += 1

@@ -139,10 +139,11 @@ class LeadDatabase:
                 row[1] for row in conn.execute("PRAGMA table_info(leads)").fetchall()
             }
             for col, ddl in (
-                ("contact_email",   "ALTER TABLE leads ADD COLUMN contact_email TEXT"),
-                ("contact_phone",   "ALTER TABLE leads ADD COLUMN contact_phone TEXT"),
-                ("contact_website", "ALTER TABLE leads ADD COLUMN contact_website TEXT"),
-                ("enriched_at",     "ALTER TABLE leads ADD COLUMN enriched_at TIMESTAMP"),
+                ("contact_email",      "ALTER TABLE leads ADD COLUMN contact_email TEXT"),
+                ("contact_phone",      "ALTER TABLE leads ADD COLUMN contact_phone TEXT"),
+                ("contact_website",    "ALTER TABLE leads ADD COLUMN contact_website TEXT"),
+                ("enriched_at",        "ALTER TABLE leads ADD COLUMN enriched_at TIMESTAMP"),
+                ("email_confidence",   "ALTER TABLE leads ADD COLUMN email_confidence TEXT DEFAULT ''"),
             ):
                 if col not in existing_cols:
                     conn.execute(ddl)
@@ -249,7 +250,8 @@ class LeadDatabase:
             conn.close()
 
     def update_contact_info(self, lead_id: int, email: str = "",
-                            phone: str = "", website: str = ""):
+                            phone: str = "", website: str = "",
+                            email_confidence: str = ""):
         """Store enriched contact info on a lead."""
         conn = self._get_conn()
         try:
@@ -258,9 +260,11 @@ class LeadDatabase:
                    SET contact_email = COALESCE(NULLIF(?, ''), contact_email),
                        contact_phone = COALESCE(NULLIF(?, ''), contact_phone),
                        contact_website = COALESCE(NULLIF(?, ''), contact_website),
+                       email_confidence = COALESCE(NULLIF(?, ''), email_confidence),
                        enriched_at = ?
                    WHERE id = ?""",
-                (email, phone, website, datetime.utcnow().isoformat(), lead_id)
+                (email, phone, website, email_confidence,
+                 datetime.utcnow().isoformat(), lead_id)
             )
             conn.commit()
         finally:

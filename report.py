@@ -469,6 +469,29 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     background: #334155;
     color: #64748b;
   }}
+  .conf-tag {{
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-left: 6px;
+    vertical-align: middle;
+  }}
+  .conf-verified {{
+    background: #14532d;
+    color: #86efac;
+  }}
+  .conf-guessed {{
+    background: #78350f;
+    color: #fcd34d;
+  }}
+  .conf-unknown {{
+    background: #334155;
+    color: #94a3b8;
+  }}
   .secondary-links {{
     margin-top: 8px;
     font-size: 0.78rem;
@@ -801,6 +824,7 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     contact_email = (lead.get("contact_email") or "").strip()
     contact_phone = (lead.get("contact_phone") or "").strip()
     contact_website = (lead.get("contact_website") or "").strip()
+    email_confidence = (lead.get("email_confidence") or "").strip()
     company_name = lead.get("author") or ""
     q = quote_plus(company_name) if company_name else ""
 
@@ -835,7 +859,9 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         subj = quote_plus(f"Quick question — {company_name}" if company_name else "Quick question")
         email_body = quote_plus(pitch_text)
         send_url = f"mailto:{contact_email}?subject={subj}&body={email_body}"
-        send_label = f"✉️ Email {escape(contact_email)}"
+        conf_icon = "✅" if email_confidence == "verified" else "⚠️"
+        conf_tip = "Found on their website" if email_confidence == "verified" else "Guessed from domain — may not reach a real person"
+        send_label = f'{conf_icon} Email {escape(contact_email)} <span class="conf-tag conf-{email_confidence}" title="{conf_tip}">{email_confidence or "unknown"}</span>'
     elif platform in ("reddit", "reddit_search", "hackernews", "bluesky", "forum", "quora") and url and url != "N/A":
         send_url = escape(url)
         send_label = "💬 Reply on platform"
