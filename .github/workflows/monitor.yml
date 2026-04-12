@@ -37,6 +37,9 @@ on:
           - hn
           - bluesky
           - jobs
+          - complaints
+          - craigslist
+          - quora
           - digest
           - test
 
@@ -108,14 +111,17 @@ jobs:
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
           case "$MODE" in
-            reddit)   python main.py --reddit ;;
-            forums)   python main.py --forums ;;
-            hn)       python main.py --hn ;;
-            bluesky)  python main.py --bluesky ;;
-            jobs)     python main.py --jobs ;;
-            digest)   python main.py --digest ;;
-            test)     python main.py --test ;;
-            *)        python main.py ;;
+            reddit)      python main.py --reddit ;;
+            forums)      python main.py --forums ;;
+            hn)          python main.py --hn ;;
+            bluesky)     python main.py --bluesky ;;
+            jobs)        python main.py --jobs ;;
+            complaints)  python main.py --complaints ;;
+            craigslist)  python main.py --craigslist ;;
+            quora)       python main.py --quora ;;
+            digest)      python main.py --digest ;;
+            test)        python main.py --test ;;
+            *)           python main.py ;;
           esac
 
       # Save database for next run (unique key per run, auto-evicts old ones)
@@ -126,8 +132,10 @@ jobs:
           path: data/leads.db
           key: lead-monitor-db-${{ github.run_id }}
 
-      # Generate the leads dashboard HTML
+      # Generate the leads dashboard HTML — runs even if scan timed out
+      # so we always redeploy the dashboard with whatever DB state exists.
       - name: Generate leads dashboard
+        if: always()
         run: python report.py --output _site
 
       # Save logs for debugging
@@ -139,7 +147,7 @@ jobs:
           path: data/monitor.log
           retention-days: 7
 
-      # Deploy dashboard to GitHub Pages
+      # Deploy dashboard to GitHub Pages (only if _site was generated)
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         if: always()

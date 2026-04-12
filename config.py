@@ -760,34 +760,21 @@ COMPLAINTS = {
     # Exact phrases to search for inside reviews. Each phrase is wrapped
     # in quotes so DDG does a phrase match. Picked from real 1-star
     # patterns for phone-unreachable businesses.
+    # Kept short: each phrase × vertical × site = one DDG query.
+    # 4 phrases × 4 verticals × 2 sites = 32 queries (~50 seconds).
+    # We rotate through different phrase/vertical sets across scans
+    # rather than trying to cover everything every hour.
     "complaint_phrases": [
         "never answered the phone",
-        "called multiple times",
-        "nobody ever answered",
-        "can never get through",
+        "called multiple times no answer",
         "phone goes straight to voicemail",
-        "no one ever calls back",
-        "no one returned my call",
-        "couldn't reach anyone",
-        "left message after message",
-        "been trying to call",
-        "impossible to reach",
-        "unable to contact",
+        "impossible to reach by phone",
     ],
-    # Business verticals to scope each search to (empty string = no scope).
-    # Each combination of phrase × vertical becomes one DDG query.
     "verticals": [
-        "",  # catch-all
+        "",         # catch-all
         "dentist",
         "plumber",
         "HVAC",
-        "electrician",
-        "auto repair",
-        "law firm",
-        "medical clinic",
-        "veterinarian",
-        "chiropractor",
-        "salon",
     ],
     # Bound the load per scan
     "max_results_per_query": 8,
@@ -803,33 +790,18 @@ COMPLAINTS = {
 CRAIGSLIST = {
     "enabled": True,
     # Top US markets by volume. Add/remove cities as you scale out.
+    # Keep bounded: cities × sections = one RSS fetch each.
+    # 5 cities × 3 sections = 15 feeds (~25 seconds).
     "cities": [
         "newyork",
         "losangeles",
         "chicago",
         "houston",
         "dallas",
-        "phoenix",
-        "philadelphia",
-        "sanantonio",
-        "sandiego",
-        "miami",
-        "atlanta",
-        "boston",
-        "seattle",
-        "denver",
-        "portland",
     ],
-    # Craigslist section codes (3-letter category abbreviations)
-    # bfs = business services  |  sks = skilled trades
-    # cps = computer services  |  ths = therapeutic services
-    # lbs = labor/moving       |  bts = beauty services
-    # bbb = small biz ads      |  crs = creative services
     "sections": [
         "bfs",  # business services
         "sks",  # skilled trades
-        "cps",  # computer services
-        "ths",  # therapeutic services
         "bbb",  # small biz ads
     ],
     "request_delay_seconds": 1.5,
