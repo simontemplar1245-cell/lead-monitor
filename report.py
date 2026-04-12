@@ -71,10 +71,10 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     all_leads = db.get_leads(days=9999, limit=5000)
     hot_warm = [l for l in all_leads if l.get("category") in ("HOT", "WARM")]
 
-    # Sort: HOT first (by score desc), then WARM (by score desc)
+    # Sort: newest first, then by category (HOT before WARM at same time)
     hot_warm.sort(key=lambda x: (
+        -(datetime.fromisoformat(str(x.get("discovered_at", "2000-01-01")).replace("Z", "+00:00")).replace(tzinfo=None).timestamp() if x.get("discovered_at") else 0),
         0 if x.get("category") == "HOT" else 1,
-        -float(x.get("score", 0))
     ))
 
     hot = [l for l in hot_warm if l.get("category") == "HOT"]
@@ -557,7 +557,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
 </div>
 
 <div class="footer">
-  Advance AI Services Lead Monitor &middot; Auto-updates every hour<br>
+  Advance AI Services — Lead Dashboard &middot; Auto-updates every hour<br>
   <strong style="color:#86efac;">Direct contact (reply/DM on platform):</strong> Reddit (80+ subreddits), Hacker News, Bluesky, 8 industry forums<br>
   <strong style="color:#fcd34d;">Research needed (apply-only, cold-call the business):</strong> Indeed, LinkedIn Jobs
 </div>
@@ -770,126 +770,106 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     contact_phone = (lead.get("contact_phone") or "").strip()
     contact_website = (lead.get("contact_website") or "").strip()
 
-    if platform == "jobs":
-        # Jobs are apply-only on Indeed/LinkedIn. You cannot message the employer
-        # through the job board itself. But the business almost always has a
-        # Google Business listing, LinkedIn page, and/or Facebook page — and
-        # those DO allow direct contact. Generate links to all of them.
-        contact_badge = '<span class="badge badge-research" title="Use Maps / LinkedIn / Facebook to reach the business directly">RESEARCH</span>'
+    # ================================================================
+    # CONTACT BUTTONS — ALWAYS in this order:
+    #   1. ✉️  Email (pre-filled mailto: with pitch in body)
+    #   2. 💬  LinkedIn DM / Facebook DM (messaging platforms)
+    #   3. 🌐  Website (contact form)
+    #   4. 📞  Phone (secondary — user prefers messaging)
+    #   5. 📍  Maps (last resort — only useful to look up more info)
+    #   6. Post link / job posting (reference, not a contact action)
+    # ================================================================
+    from urllib.parse import quote_plus
+    company_name = lead.get("author") or ""
+    q = quote_plus(company_name) if company_name else ""
 
-        from urllib.parse import quote_plus
-        company_name = lead.get("author") or ""
-        q = quote_plus(company_name)
+    # Build ordered button list
+    buttons = []
 
-        # Google Maps: gets the phone number immediately for local businesses.
-        # This is the fastest path to an actual conversation.
+    # 1. Email — always the top action when we have one
+    if contact_email:
+        subj = quote_plus(f"Quick question — {company_name}" if company_name else "Quick question")
+        body = quote_plus(_fallback_pitch(lead))
+        mailto = f"mailto:{contact_email}?subject={subj}&body={body}"
+        buttons.append(f'<a class="card-link card-link-primary" href="{mailto}">✉️ Email {escape(contact_email)}</a>')
+
+    # 2. LinkedIn DM (for businesses — search by company name)
+    if platform in ("jobs", "complaints", "craigslist") and q:
+        li_url = f"https://www.linkedin.com/search/results/companies/?keywords={q}"
+        buttons.append(f'<a class="card-link" href="{li_url}" target="_blank" rel="noopener">💬 LinkedIn</a>')
+
+    # 3. Facebook DM (for businesses — search pages)
+    if platform in ("jobs", "complaints", "craigslist") and q:
+        fb_url = f"https://www.facebook.com/search/pages/?q={q}"
+        buttons.append(f'<a class="card-link" href="{fb_url}" target="_blank" rel="noopener">💬 Facebook</a>')
+
+    # 4. Website
+    if contact_website:
+        buttons.append(f'<a class="card-link" href="{escape(contact_website)}" target="_blank" rel="noopener">🌐 Website</a>')
+    elif platform in ("jobs", "complaints") and q:
+        google_url = f"https://www.google.com/search?q={quote_plus(company_name + ' contact email')}"
+        buttons.append(f'<a class="card-link" href="{google_url}" target="_blank" rel="noopener">🔍 Find email</a>')
+
+    # 5. Phone (shown but not primary — user prefers messaging)
+    if contact_phone:
+        tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
+        buttons.append(f'<a class="card-link" href="{tel_url}">📞 {escape(contact_phone)}</a>')
+
+    # 6. Maps (backup — useful to look up phone/address when enrichment is empty)
+    if platform in ("jobs", "complaints", "craigslist") and q:
         maps_url = f"https://www.google.com/maps/search/?api=1&query={q}"
-        # LinkedIn company search: find the owner/HR and send a connection
-        # request with a note (free, no Premium needed).
-        linkedin_url = f"https://www.linkedin.com/search/results/companies/?keywords={q}"
-        # Facebook Pages search: small businesses often read Page DMs daily.
-        facebook_url = f"https://www.facebook.com/search/pages/?q={q}"
-        # Regular Google (fallback for website/email discovery)
-        google_url = f"https://www.google.com/search?q={quote_plus(company_name + ' contact')}"
+        buttons.append(f'<a class="card-link" href="{maps_url}" target="_blank" rel="noopener">📍 Maps</a>')
 
-        # Direct-action buttons appear FIRST when enrichment found something
-        direct_links = ""
-        if contact_email:
-            mailto_subject = quote_plus(f"Quick question — {company_name}")
-            mailto_body = quote_plus(_fallback_pitch(lead))
-            mailto_url = f"mailto:{contact_email}?subject={mailto_subject}&body={mailto_body}"
-            direct_links += f'<a class="card-link card-link-primary" href="{mailto_url}">✉️ Email {escape(contact_email)}</a>'
-        if contact_phone:
-            tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
-            direct_links += f'<a class="card-link card-link-primary" href="{tel_url}">📞 Call {escape(contact_phone)}</a>'
-        if contact_website:
-            direct_links += f'<a class="card-link" href="{escape(contact_website)}" target="_blank" rel="noopener">🌐 Website</a>'
-
-        # Fallback search buttons (still useful when enrichment is empty
-        # or as backup)
-        primary_link = f'<a class="card-link{" card-link-primary" if not direct_links else ""}" href="{maps_url}" target="_blank" rel="noopener">📍 Maps</a>'
-        linkedin_link = f'<a class="card-link" href="{linkedin_url}" target="_blank" rel="noopener">LinkedIn</a>'
-        facebook_link = f'<a class="card-link" href="{facebook_url}" target="_blank" rel="noopener">Facebook</a>'
-        google_link = f'<a class="card-link" href="{google_url}" target="_blank" rel="noopener">Google</a>'
-
-        secondary_link = ""
-        if url and url != "N/A":
-            secondary_link = f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">Job posting</a>{url_indicator}'
-
-        link_html = direct_links + primary_link + linkedin_link + facebook_link + google_link + secondary_link
-
-        contact_hint = (
-            '<div class="contact-hint">'
-            '<strong>How to contact:</strong> Indeed and LinkedIn job postings are '
-            '<em>apply-only</em> — you cannot message the employer through the job board. '
-            'But you can reach the business directly through other channels:<br>'
-            '&nbsp;&nbsp;• <strong>Google Maps</strong> — fastest; local businesses list their phone number, tap to call<br>'
-            '&nbsp;&nbsp;• <strong>LinkedIn</strong> — find the owner/HR, send a connection request with a short note (free, no Premium)<br>'
-            '&nbsp;&nbsp;• <strong>Facebook</strong> — small businesses often read Page DMs daily<br>'
-            '&nbsp;&nbsp;• <strong>Website</strong> — fallback; look for a contact form or email'
-            '</div>'
-        )
-    else:
-        # Direct-contact platforms: Reddit, HN, Bluesky, forums
-        contact_badge = '<span class="badge badge-direct" title="You can reply or DM directly on this platform">DIRECT</span>'
-
-        # If enrichment found an email/phone in their post body or HN profile,
-        # surface it FIRST as a real contact action
-        direct_links = ""
-        if contact_email:
-            from urllib.parse import quote_plus
-            mailto_subject = quote_plus("Saw your post")
-            mailto_body = quote_plus(_fallback_pitch(lead))
-            mailto_url = f"mailto:{contact_email}?subject={mailto_subject}&body={mailto_body}"
-            direct_links += f'<a class="card-link card-link-primary" href="{mailto_url}">✉️ Email {escape(contact_email)}</a>'
-        if contact_phone:
-            tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
-            direct_links += f'<a class="card-link card-link-primary" href="{tel_url}">📞 {escape(contact_phone)}</a>'
-        if contact_website:
-            direct_links += f'<a class="card-link" href="{escape(contact_website)}" target="_blank" rel="noopener">🌐 Website</a>'
-
-        if url and url != "N/A":
-            reply_link = f'<a class="card-link{" card-link-primary" if not direct_links else ""}" href="{escape(url)}" target="_blank" rel="noopener">Open post &amp; reply &rarr;</a>{url_indicator}'
-            link_html = direct_links + reply_link
+    # 7. Post link (for social leads: the original post to reply to)
+    if url and url != "N/A":
+        if platform in ("jobs",):
+            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 Job posting</a>{url_indicator}')
+        elif platform in ("complaints",):
+            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 Review</a>{url_indicator}')
+        elif platform in ("craigslist",):
+            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 CL post</a>{url_indicator}')
+        elif platform in ("quora",):
+            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 Quora thread</a>{url_indicator}')
         else:
-            link_html = direct_links
+            # Reddit, HN, Bluesky, forums — replying IS the contact method
+            is_primary = not contact_email  # only make it green if no email available
+            cls = "card-link card-link-primary" if is_primary else "card-link"
+            buttons.append(f'<a class="{cls}" href="{escape(url)}" target="_blank" rel="noopener">💬 Reply on platform</a>{url_indicator}')
 
-        if platform in ("reddit", "reddit_search"):
-            contact_hint = (
-                '<div class="contact-hint">'
-                '<strong>How to contact:</strong> Click the link to open the Reddit post, '
-                'then reply publicly (helpful first, pitch last) or DM the author directly. '
-                'Check their post history first — long-time users spot spam instantly.'
-                '</div>'
-            )
-        elif platform == "hackernews":
-            contact_hint = (
-                '<div class="contact-hint">'
-                '<strong>How to contact:</strong> Reply in the HN thread, or click the author\'s '
-                'username on HN — their profile often lists an email address.'
-                '</div>'
-            )
-        elif platform == "bluesky":
-            contact_hint = (
-                '<div class="contact-hint">'
-                '<strong>How to contact:</strong> Reply publicly on Bluesky. '
-                'DMs only work if they follow you back.'
-                '</div>'
-            )
-        elif platform == "forum":
-            contact_hint = (
-                '<div class="contact-hint">'
-                '<strong>How to contact:</strong> Reply in the forum thread, '
-                'or create a free account and PM the user directly.'
-                '</div>'
-            )
+    # If no email was found, make the first button primary
+    if buttons and not contact_email:
+        buttons[0] = buttons[0].replace('class="card-link"', 'class="card-link card-link-primary"', 1)
 
-    # For job postings, show company + role clearly
+    link_html = "".join(buttons)
+
+    # Contact hint — simple, one-liner per platform type
+    if platform in ("jobs", "complaints", "craigslist"):
+        if contact_email:
+            contact_hint = '<div class="contact-hint">✉️ Email found — click to send with the pitch pre-filled.</div>'
+        else:
+            contact_hint = '<div class="contact-hint">No email found yet. Try LinkedIn or Facebook DM, or click <em>Find email</em> to search.</div>'
+    elif platform in ("reddit", "reddit_search"):
+        contact_hint = '<div class="contact-hint">Reply publicly first (helpful, not salesy), then DM the author.</div>'
+    elif platform == "hackernews":
+        contact_hint = '<div class="contact-hint">Reply in the HN thread, or click the author\'s username — their profile often lists an email.</div>'
+    elif platform == "bluesky":
+        contact_hint = '<div class="contact-hint">Reply publicly on Bluesky. DMs only work if they follow you back.</div>'
+    elif platform == "forum":
+        contact_hint = '<div class="contact-hint">Reply in the forum thread or PM the user directly.</div>'
+    elif platform == "quora":
+        contact_hint = '<div class="contact-hint">Answer the Quora question — helpful answers rank on Google for years.</div>'
+    else:
+        contact_hint = ""
+
+    # For job postings / complaints, show the business name prominently
     role_html = ""
     if platform == "jobs":
         company_line = author
         title_line = ""
         role_html = f'<div class="card-role">Role: {title}</div>'
+    elif platform in ("complaints", "craigslist"):
+        company_line = author if author and author != "Unknown" else title
+        title_line = title if company_line != title else ""
     else:
         company_line = f"{community}"
         title_line = title
@@ -926,25 +906,39 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     elif body:
         summary = escape(body[:200]) + ("..." if len(body) > 200 else "")
 
-    # Source label — show the ACTUAL board (Indeed vs LinkedIn vs r/sub etc.)
-    source_map = {
-        "jobs": "Job Board",
-        "reddit": "Reddit",
-        "reddit_search": "Reddit",
-        "hackernews": "Hacker News",
-        "bluesky": "Bluesky",
-        "forum": "Forum",
-    }
-    source_label = source_map.get(platform, platform)
+    # ================================================================
+    # SOURCE LABEL — ONE clear, specific label per lead.
+    # Show exactly where this lead was found so the user never has to
+    # guess. Examples: "Indeed", "Reddit r/HVAC", "Yelp Review",
+    # "Craigslist NYC", "Quora", "Hacker News".
+    # ================================================================
     if platform == "jobs" and community:
-        # community is stored like "indeed (United States)" — extract the board name
         board = community.split(" (")[0].strip().title()
-        if board:
-            source_label = board
+        source_label = board if board else "Job Board"
     elif platform in ("reddit", "reddit_search") and community:
-        source_label = f"r/{community}"
+        # community can be "HVAC" or "r/HVAC (search: virtual rec...)"
+        sub = community.split(" (")[0].strip()
+        if not sub.startswith("r/"):
+            sub = f"r/{sub}"
+        source_label = f"Reddit {sub}"
     elif platform == "forum" and community:
         source_label = community
+    elif platform == "hackernews":
+        source_label = "Hacker News"
+    elif platform == "bluesky":
+        source_label = "Bluesky"
+    elif platform == "complaints" and community:
+        # community is the review site name: yelp, bbb, trustpilot, etc.
+        site_nice = {"yelp": "Yelp Review", "bbb": "BBB Complaint",
+                     "trustpilot": "Trustpilot", "google_maps": "Google Maps"}
+        source_label = site_nice.get(community, community.title())
+    elif platform == "craigslist" and community:
+        city = community.split("/")[0].title()
+        source_label = f"Craigslist {city}"
+    elif platform == "quora":
+        source_label = "Quora"
+    else:
+        source_label = platform.replace("_", " ").title() if platform else "Unknown"
 
     score_pct = int(score * 100)
 
@@ -959,7 +953,6 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
       <div style="text-align:right;white-space:nowrap;">
         <span class="badge {badge_class}">{category}</span>
         <span class="badge badge-source">{source_label}</span>
-        {contact_badge}
       </div>
     </div>
     <div class="card-summary">{summary}</div>
