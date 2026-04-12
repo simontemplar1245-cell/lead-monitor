@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 # Ensure we can import from project root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import LOG_LEVEL, LOG_FILE, DATABASE_PATH, HOT_THRESHOLD, WARM_THRESHOLD
+from config import LOG_LEVEL, LOG_FILE, DATABASE_PATH, HOT_THRESHOLD, WARM_THRESHOLD, SELLER_FILTER
 from core.database import LeadDatabase
 from core.classifier import LeadClassifier
 from core.notifier import NtfyNotifier
@@ -54,6 +54,45 @@ logger = logging.getLogger("lead_monitor")
 # SHARED LEAD-PROCESSING LOGIC
 # =============================================================================
 
+def _is_seller_post(post_data: dict) -> bool:
+    """
+    Return True if the post is from a competitor or someone SELLING
+    an AI/automation product (not a genuine buyer/lead).
+
+    Two checks:
+      1. Author name matches a known competitor company name
+      2. Post body contains seller language + AI/automation topic words
+    """
+    if not SELLER_FILTER.get("enabled", True):
+        return False
+
+    author = (post_data.get("author") or "").lower().strip()
+    title = (post_data.get("title") or "").lower()
+    body = (post_data.get("body") or "").lower()
+    full_text = f"{title} {body}"
+
+    # Check 1: known competitor names
+    for name in SELLER_FILTER.get("competitor_names", []):
+        name_lower = name.lower()
+        if name_lower in author or name_lower in full_text:
+            logger.debug(f"Seller filter: competitor name '{name}' in author/text")
+            return True
+
+    # Check 2: seller language + AI topic co-occurrence
+    # Must have BOTH a seller phrase AND an AI/automation topic word
+    seller_phrases = SELLER_FILTER.get("seller_phrases", [])
+    topic_words = SELLER_FILTER.get("seller_topic_words", [])
+
+    has_seller_phrase = any(p.lower() in full_text for p in seller_phrases)
+    has_topic_word = any(w.lower() in full_text for w in topic_words)
+
+    if has_seller_phrase and has_topic_word:
+        logger.debug(f"Seller filter: seller language + AI topic detected")
+        return True
+
+    return False
+
+
 def _process_lead(post_data: dict, db: LeadDatabase,
                   classifier: LeadClassifier, notifier: NtfyNotifier,
                   stats: dict, test_mode: bool,
@@ -67,6 +106,12 @@ def _process_lead(post_data: dict, db: LeadDatabase,
                       language).
     """
     if db.is_duplicate(post_data["post_id"]):
+        return
+
+    # SELLER FILTER: reject posts from competitors / people selling AI products
+    if _is_seller_post(post_data):
+        stats.setdefault("seller_filtered", 0)
+        stats["seller_filtered"] += 1
         return
 
     text = post_data.get("full_text", "")
@@ -121,7 +166,7 @@ def run_reddit_scan(db: LeadDatabase, classifier: LeadClassifier,
     """Run Reddit scraper across all target subreddits."""
     from scrapers.reddit_scraper import RedditScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -156,7 +201,7 @@ def run_forum_scan(db: LeadDatabase, classifier: LeadClassifier,
     """Run forum scrapers (Dentaltown, ContractorTalk, etc.)."""
     from scrapers.forum_scraper import ForumScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -187,7 +232,7 @@ def run_hackernews_scan(db: LeadDatabase, classifier: LeadClassifier,
     """Run Hacker News scraper."""
     from scrapers.hackernews_scraper import HackerNewsScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -218,7 +263,7 @@ def run_bluesky_scan(db: LeadDatabase, classifier: LeadClassifier,
     """Run Bluesky scraper."""
     from scrapers.bluesky_scraper import BlueskyScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -255,7 +300,7 @@ def run_reddit_search_scan(db: LeadDatabase, classifier: LeadClassifier,
     """
     from scrapers.reddit_search_scraper import RedditSearchScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -297,7 +342,7 @@ def run_jobs_scan(db: LeadDatabase, classifier: LeadClassifier,
     """
     from scrapers.jobs_scraper import JobsScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -342,7 +387,7 @@ def run_complaint_scan(db: LeadDatabase, classifier: LeadClassifier,
     """
     from scrapers.complaint_scraper import ComplaintScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -384,7 +429,7 @@ def run_craigslist_scan(db: LeadDatabase, classifier: LeadClassifier,
     """Scrape Craigslist small-biz / services RSS feeds across target cities."""
     from scrapers.craigslist_scraper import CraigslistScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -420,7 +465,7 @@ def run_quora_scan(db: LeadDatabase, classifier: LeadClassifier,
     """Find Quora questions matching buying-intent queries via DDG."""
     from scrapers.quora_scraper import QuoraScraper
 
-    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "errors": ""}
+    stats = {"scanned": 0, "found": 0, "hot": 0, "warm": 0, "cold": 0, "seller_filtered": 0, "errors": ""}
     start_time = time.time()
 
     try:
@@ -528,12 +573,15 @@ def run_full_scan(test_mode: bool = False):
     total_found = sum(s["found"] for s in all_stats.values())
     total_hot = sum(s["hot"] for s in all_stats.values())
     total_warm = sum(s["warm"] for s in all_stats.values())
+    total_seller = sum(s.get("seller_filtered", 0) for s in all_stats.values())
     total_errors = [f"{k}: {v['errors']}" for k, v in all_stats.items() if v.get("errors")]
 
     logger.info("=" * 60)
     logger.info(f"SCAN COMPLETE in {total_time:.1f}s")
     logger.info(f"Total scanned: {total_scanned}")
     logger.info(f"Total leads: {total_found} ({total_hot} HOT, {total_warm} WARM)")
+    if total_seller:
+        logger.info(f"Seller/competitor posts filtered: {total_seller}")
     if total_errors:
         logger.warning(f"Errors: {'; '.join(total_errors)}")
     logger.info("=" * 60)

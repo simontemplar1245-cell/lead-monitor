@@ -858,6 +858,8 @@ WARM (score 0.5-0.79): Person has a related problem but hasn't decided on a solu
 COLD (score 0.0-0.49): Not a lead:
 - Just discussing AI as a topic (not buying)
 - They already have a solution / are selling a solution
+- The poster IS an AI company, automation vendor, chatbot platform, or answering service PROMOTING their own product (these are competitors, NOT leads)
+- The post contains self-promotional language like "we offer", "our platform", "try our", "sign up", "free trial", "I built", "just launched" — these are sellers, not buyers
 - Technical discussion with no buying intent
 - Complaints about AI / negative sentiment toward automation
 - Student or job seeker (not a business owner)
@@ -883,6 +885,81 @@ IMPORTANT RULES FOR SUGGESTED REPLIES:
 # NOTE: Individual HOT/WARM/JOB alert templates were REMOVED. All leads are
 # now bundled into ONE digest notification per scan cycle. The formatting
 # lives in core/notifier.py (NtfyNotifier.flush_digest).
+
+# =============================================================================
+# SELLER / COMPETITOR FILTER
+# =============================================================================
+# Detects posts from companies SELLING the same things as Advance AI Services.
+# A post from "Dialzara" or "Smith.ai" talking about their product is NOT a
+# lead — it's a competitor marketing their own service. This filter runs
+# BEFORE classification to avoid wasting a Haiku API call and to keep the
+# dashboard clean.
+#
+# Two checks:
+#  1. Author name matches a known competitor / AI-automation vendor
+#  2. Post body contains "seller language" patterns (promoting a product)
+#     combined with AI/automation topic words
+SELLER_FILTER = {
+    "enabled": True,
+
+    # Companies whose posts we should NEVER treat as leads. These are
+    # answering services, AI receptionist companies, chatbot platforms,
+    # and automation vendors — i.e. our direct competitors.
+    # Matched case-insensitively against the author / company field.
+    "competitor_names": [
+        # Virtual receptionist / answering services
+        "smith.ai", "smithai", "ruby receptionists", "ruby receptionist",
+        "posh virtual", "moneypenny", "answerconnect", "answer connect",
+        "nexa", "davinci virtual", "abby connect", "call ruby",
+        "specialty answering", "map communications", "answering service care",
+        "pat live", "patlive", "conversational",
+        # AI phone / chatbot platforms
+        "dialzara", "bland ai", "bland.ai", "synthflow",
+        "air ai", "airai", "vapi", "retell ai", "retell.ai",
+        "goodcall", "rosie ai", "rosie.ai",
+        "slang ai", "slang.ai", "echowin",
+        "recepcionista ai", "phonely", "simple phones",
+        "calldesk", "parloa", "cognigy", "voiceflow",
+        "botpress", "intercom", "drift", "tidio", "crisp",
+        "freshchat", "zendesk", "hubspot", "salesforce",
+        # Automation / AI agencies
+        "automation anywhere", "uipath", "zapier",
+        "make.com", "bardeen", "relevance ai",
+        "eleven labs", "elevenlabs",
+        # Generic patterns
+        "ai solutions", "ai services", "chatbot company",
+    ],
+
+    # Phrases that indicate the poster is SELLING, not BUYING.
+    # Must appear alongside an AI/automation topic word to trigger.
+    "seller_phrases": [
+        "we offer", "we provide", "we built", "we've built", "we have built",
+        "we created", "we've created", "we developed", "we've developed",
+        "our platform", "our product", "our solution", "our tool",
+        "our service", "our ai", "our chatbot", "our bot",
+        "try our", "check out our", "check us out", "visit our",
+        "sign up for", "sign up at", "free trial", "free demo",
+        "book a demo", "schedule a demo", "get started with our",
+        "we just launched", "we launched", "just released",
+        "introducing our", "announcing our", "proud to announce",
+        "i built", "i created", "i made a", "i developed",
+        "my startup", "my saas", "my company offers",
+        "we help businesses", "we help companies", "we help you",
+        "starting at $", "plans start at", "per month",
+        "use code", "promo code", "discount code", "coupon",
+        "www.", ".io", ".ai",  # URL drops in body text
+    ],
+
+    # Topic words that must co-occur with seller_phrases to trigger.
+    # Without these, "we offer plumbing services" wouldn't be filtered.
+    "seller_topic_words": [
+        "ai", "chatbot", "bot", "virtual receptionist",
+        "virtual assistant", "phone answering", "answering service",
+        "automation", "automate", "automated", "voice agent",
+        "conversational", "ivr", "call handling", "phone system",
+        "saas", "platform", "software", "app",
+    ],
+}
 
 DAILY_DIGEST_TEMPLATE = """DAILY LEAD DIGEST
 

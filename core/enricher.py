@@ -119,23 +119,35 @@ def enrich_lead(lead: dict) -> dict:
 
 
 # =============================================================================
-# STRATEGY 1: BUSINESSES (job leads)
+# STRATEGY 1: BUSINESSES (job leads + complaint leads)
+# =============================================================================
+# Search engines (Google, DDG, Bing) all block server-side scraping in 2026
+# with JS-rendering or 202 anti-bot challenges. So we skip search engines
+# entirely and use DOMAIN GUESSING + DIRECT WEBSITE SCRAPING:
+#
+#   1. Turn company name into candidate domains (smithplumbing.com, etc.)
+#   2. HEAD-check each domain (~50ms per try, no page load needed)
+#   3. Once we find a live domain, scrape /contact, /about for email+phone
+#   4. If no email found, check MX records and suggest info@domain.com
+#   5. Optional Hunter.io fallback for domains where scraping fails
+#
+# This is fast (all calls are < 100ms HEAD or < 500ms page fetch), free
+# (no API keys), and works from any IP (no anti-bot challenges).
 # =============================================================================
 
 def _enrich_business(lead: dict, result: dict):
-    """Find a company website + scrape it for contact info."""
+    """Find a company website via domain guessing, then scrape contact info."""
     company = (lead.get("author") or "").strip()
     if not company:
         return
 
-    # Step 1: find the company website via DDG
-    website = _ddg_top_result(f"{company} contact")
-    if not website:
-        # Try a softer query
-        website = _ddg_top_result(f"{company} official site")
-    if not website:
+    # Step 1: guess the company's domain from their name
+    domain = _guess_domain(company)
+    if not domain:
+        logger.debug(f"  no live domain found for '{company}'")
         return
 
+    website = f"https://{domain}"
     result["website"] = website
     logger.info(f"  found website: {website}")
 
@@ -148,12 +160,12 @@ def _enrich_business(lead: dict, result: dict):
     for url in pages_to_try:
         if result["email"] and result["phone"]:
             break
-        time.sleep(REQUEST_DELAY)
+        time.sleep(0.3)  # light delay, all same domain
         html = _http_get(url)
         if not html:
             continue
         if not result["email"]:
-            email = _extract_first_email(html, prefer_domain=_domain_of(website))
+            email = _extract_first_email(html, prefer_domain=domain)
             if email:
                 result["email"] = email
         if not result["phone"]:
@@ -161,14 +173,112 @@ def _enrich_business(lead: dict, result: dict):
             if phone:
                 result["phone"] = phone
 
-    # Step 3: optional Hunter.io fallback if we still have nothing
+    # Step 3: if we found a domain but no email, check MX records and
+    # suggest info@domain.com (most SMBs use this as their catch-all)
+    if not result["email"] and domain:
+        if _has_mx_records(domain):
+            result["email"] = f"info@{domain}"
+            logger.info(f"  MX found, suggesting info@{domain}")
+
+    # Step 4: optional Hunter.io fallback
     if not result["email"] and os.getenv("HUNTER_API_KEY"):
         try:
-            hunter_email = _hunter_lookup(_domain_of(website))
+            hunter_email = _hunter_lookup(domain)
             if hunter_email:
                 result["email"] = hunter_email
         except Exception as e:
             logger.debug(f"Hunter.io lookup failed: {e}")
+
+
+def _guess_domain(company: str) -> Optional[str]:
+    """
+    Turn a company name into candidate domain names and check which ones
+    are live. Returns the first domain that responds, or None.
+
+    e.g. "ABC Heating & Cooling Inc." →
+         ["abcheatingandcooling.com", "abcheatingcooling.com",
+          "abc-heating-and-cooling.com", "abchvac.com", ...]
+    """
+    # Normalize: lowercase, strip suffixes, clean punctuation
+    name = company.lower()
+    # Strip common business suffixes
+    for suffix in (" inc", " inc.", " llc", " llp", " ltd", " co.",
+                   " corp", " corp.", " company", " group",
+                   " services", " service"):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+    # Replace & with "and", strip non-alphanum
+    name = name.replace("&", "and").replace("'", "").replace("'", "")
+    name = re.sub(r'[^a-z0-9\s]', '', name).strip()
+    words = name.split()
+
+    if not words:
+        return None
+
+    candidates = []
+    joined = "".join(words)
+    hyphenated = "-".join(words)
+
+    # Most likely patterns
+    candidates.append(f"{joined}.com")
+    candidates.append(f"{hyphenated}.com")
+    if len(words) > 2:
+        # First + last word (e.g. "abc cooling" from "abc heating and cooling")
+        short = words[0] + words[-1]
+        candidates.append(f"{short}.com")
+    candidates.append(f"{joined}.net")
+    candidates.append(f"{joined}.biz")
+
+    for domain in candidates:
+        if _domain_is_live(domain):
+            return domain
+
+    return None
+
+
+def _domain_is_live(domain: str) -> bool:
+    """Quick HEAD check to see if a domain resolves and serves HTTP."""
+    try:
+        resp = requests.head(
+            f"https://{domain}",
+            timeout=4,
+            allow_redirects=True,
+            headers={"User-Agent": USER_AGENT},
+        )
+        return resp.status_code < 500
+    except Exception:
+        # Try HTTP if HTTPS fails
+        try:
+            resp = requests.head(
+                f"http://{domain}",
+                timeout=4,
+                allow_redirects=True,
+                headers={"User-Agent": USER_AGENT},
+            )
+            return resp.status_code < 500
+        except Exception:
+            return False
+
+
+def _has_mx_records(domain: str) -> bool:
+    """Check if a domain has MX records (= accepts email)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["dig", "+short", "MX", domain],
+            capture_output=True, text=True, timeout=5
+        )
+        return bool(result.stdout.strip())
+    except Exception:
+        # dig not available — try nslookup as fallback
+        try:
+            result = subprocess.run(
+                ["nslookup", "-type=MX", domain],
+                capture_output=True, text=True, timeout=5
+            )
+            return "mail exchanger" in result.stdout.lower()
+        except Exception:
+            return False
 
 
 # =============================================================================
