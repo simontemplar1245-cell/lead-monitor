@@ -274,6 +274,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     flex-wrap: wrap;
     align-items: center;
   }}
+  /* legacy — kept for any stray references */
   .card-link {{
     display: inline-block;
     padding: 6px 14px;
@@ -285,30 +286,6 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     font-size: 0.85rem;
     transition: background 0.2s;
     margin-right: 6px;
-  }}
-  .card-link:hover {{
-    background: #2563eb;
-    color: #fff;
-  }}
-  .card-link-primary {{
-    background: #14532d;
-    color: #86efac;
-  }}
-  .card-link-primary:hover {{
-    background: #16a34a;
-    color: #fff;
-  }}
-  .contact-hint {{
-    font-size: 0.78rem;
-    color: #94a3b8;
-    margin-top: 8px;
-    padding: 8px 10px;
-    background: #0f172a;
-    border-radius: 6px;
-    border-left: 3px solid #475569;
-  }}
-  .contact-hint strong {{
-    color: #cbd5e1;
   }}
   .card-role {{
     font-size: 0.88rem;
@@ -419,22 +396,7 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
   }}
   .signup-item strong {{ display: block; color: #f8fafc; margin-bottom: 2px; }}
   .signup-item span {{ color: #64748b; font-size: 0.78rem; }}
-  /* Copy button + contacted state */
-  .copy-btn {{
-    display: inline-block;
-    padding: 5px 12px;
-    background: #1e3a5f;
-    color: #93c5fd;
-    border: 1px solid #334155;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
-    margin-left: 6px;
-    transition: all 0.2s;
-  }}
-  .copy-btn:hover {{ background: #2563eb; color: #fff; }}
-  .copy-btn.copied {{ background: #14532d; color: #86efac; border-color: #14532d; }}
+  /* Contacted state */
   .mark-btn {{
     display: inline-block;
     padding: 5px 12px;
@@ -455,14 +417,87 @@ def generate_html(db: LeadDatabase, validate: bool = False) -> str:
     color: #86efac;
     border-color: #14532d;
   }}
-  .hidden-msg {{ position: absolute; left: -9999px; top: -9999px; }}
-  .suggested-row {{
+  .action-bar {{
     display: flex;
+    gap: 10px;
+    margin-top: 12px;
     align-items: center;
-    gap: 8px;
-    margin-top: 8px;
     flex-wrap: wrap;
   }}
+  .action-btn {{
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    border: none;
+    transition: all 0.2s;
+  }}
+  .action-copy {{
+    background: #1e3a5f;
+    color: #93c5fd;
+    border: 1px solid #2563eb;
+  }}
+  .action-copy:hover {{
+    background: #2563eb;
+    color: #fff;
+  }}
+  .action-copy.copied {{
+    background: #14532d;
+    color: #86efac;
+    border-color: #16a34a;
+  }}
+  .action-send {{
+    background: #14532d;
+    color: #86efac;
+    border: 1px solid #16a34a;
+  }}
+  .action-send:hover {{
+    background: #16a34a;
+    color: #fff;
+  }}
+  .action-disabled {{
+    background: #334155;
+    color: #64748b;
+    cursor: default;
+    border: 1px solid #475569;
+  }}
+  .action-disabled:hover {{
+    background: #334155;
+    color: #64748b;
+  }}
+  .secondary-links {{
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: #64748b;
+  }}
+  .secondary-links a {{
+    color: #94a3b8;
+    text-decoration: none;
+    transition: color 0.2s;
+  }}
+  .secondary-links a:hover {{
+    color: #60a5fa;
+    text-decoration: underline;
+  }}
+  .pitch-body {{
+    margin-top: 8px;
+    line-height: 1.6;
+  }}
+  .suggested details {{
+    cursor: pointer;
+  }}
+  .suggested summary {{
+    color: #cbd5e1;
+    font-size: 0.82rem;
+  }}
+  .suggested summary:hover {{
+    color: #f8fafc;
+  }}
+  .hidden-msg {{ position: absolute; left: -9999px; top: -9999px; }}
   @media (max-width: 600px) {{
     .pipeline {{ gap: 8px; }}
     .pipe-box {{ min-width: 80px; padding: 10px 12px; }}
@@ -593,7 +628,7 @@ function copyPitch(leadId, btn) {{
 }}
 function flashCopied(btn) {{
   const orig = btn.innerHTML;
-  btn.innerHTML = '✓ Copied!';
+  btn.innerHTML = '✅ Copied!';
   btn.classList.add('copied');
   setTimeout(() => {{
     btn.innerHTML = orig;
@@ -760,110 +795,14 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
             url_indicator = f' <span class="url-bad" title="{escape(vs["reason"])}">&#10007;</span>'
 
     # ========================================================================
-    # CONTACT STRATEGY per platform — critical for actually reaching the lead
+    # CONTACT — two big buttons + small secondary links
     # ========================================================================
-    # Direct-contact platforms: Reddit, HN, Bluesky, forums (comment/DM free)
-    # Research-needed platforms: Indeed/LinkedIn jobs (apply-only, no employer DM)
-    # ========================================================================
-    link_html = ""
-    contact_badge = ""
-    contact_hint = ""
-
-    # Contact info pulled in by core/enricher.py (may be empty strings)
+    from urllib.parse import quote_plus
     contact_email = (lead.get("contact_email") or "").strip()
     contact_phone = (lead.get("contact_phone") or "").strip()
     contact_website = (lead.get("contact_website") or "").strip()
-
-    # ================================================================
-    # CONTACT BUTTONS — ALWAYS in this order:
-    #   1. ✉️  Email (pre-filled mailto: with pitch in body)
-    #   2. 💬  LinkedIn DM / Facebook DM (messaging platforms)
-    #   3. 🌐  Website (contact form)
-    #   4. 📞  Phone (secondary — user prefers messaging)
-    #   5. 📍  Maps (last resort — only useful to look up more info)
-    #   6. Post link / job posting (reference, not a contact action)
-    # ================================================================
-    from urllib.parse import quote_plus
     company_name = lead.get("author") or ""
     q = quote_plus(company_name) if company_name else ""
-
-    # Build ordered button list
-    buttons = []
-
-    # 1. Email — always the top action when we have one
-    if contact_email:
-        subj = quote_plus(f"Quick question — {company_name}" if company_name else "Quick question")
-        body = quote_plus(_fallback_pitch(lead))
-        mailto = f"mailto:{contact_email}?subject={subj}&body={body}"
-        buttons.append(f'<a class="card-link card-link-primary" href="{mailto}">✉️ Email {escape(contact_email)}</a>')
-
-    # 2. LinkedIn DM (for businesses — search by company name)
-    if platform in ("jobs", "complaints", "craigslist") and q:
-        li_url = f"https://www.linkedin.com/search/results/companies/?keywords={q}"
-        buttons.append(f'<a class="card-link" href="{li_url}" target="_blank" rel="noopener">💬 LinkedIn</a>')
-
-    # 3. Facebook DM (for businesses — search pages)
-    if platform in ("jobs", "complaints", "craigslist") and q:
-        fb_url = f"https://www.facebook.com/search/pages/?q={q}"
-        buttons.append(f'<a class="card-link" href="{fb_url}" target="_blank" rel="noopener">💬 Facebook</a>')
-
-    # 4. Website
-    if contact_website:
-        buttons.append(f'<a class="card-link" href="{escape(contact_website)}" target="_blank" rel="noopener">🌐 Website</a>')
-    elif platform in ("jobs", "complaints") and q:
-        google_url = f"https://www.google.com/search?q={quote_plus(company_name + ' contact email')}"
-        buttons.append(f'<a class="card-link" href="{google_url}" target="_blank" rel="noopener">🔍 Find email</a>')
-
-    # 5. Phone (shown but not primary — user prefers messaging)
-    if contact_phone:
-        tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
-        buttons.append(f'<a class="card-link" href="{tel_url}">📞 {escape(contact_phone)}</a>')
-
-    # 6. Maps (backup — useful to look up phone/address when enrichment is empty)
-    if platform in ("jobs", "complaints", "craigslist") and q:
-        maps_url = f"https://www.google.com/maps/search/?api=1&query={q}"
-        buttons.append(f'<a class="card-link" href="{maps_url}" target="_blank" rel="noopener">📍 Maps</a>')
-
-    # 7. Post link (for social leads: the original post to reply to)
-    if url and url != "N/A":
-        if platform in ("jobs",):
-            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 Job posting</a>{url_indicator}')
-        elif platform in ("complaints",):
-            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 Review</a>{url_indicator}')
-        elif platform in ("craigslist",):
-            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 CL post</a>{url_indicator}')
-        elif platform in ("quora",):
-            buttons.append(f'<a class="card-link" href="{escape(url)}" target="_blank" rel="noopener">📄 Quora thread</a>{url_indicator}')
-        else:
-            # Reddit, HN, Bluesky, forums — replying IS the contact method
-            is_primary = not contact_email  # only make it green if no email available
-            cls = "card-link card-link-primary" if is_primary else "card-link"
-            buttons.append(f'<a class="{cls}" href="{escape(url)}" target="_blank" rel="noopener">💬 Reply on platform</a>{url_indicator}')
-
-    # If no email was found, make the first button primary
-    if buttons and not contact_email:
-        buttons[0] = buttons[0].replace('class="card-link"', 'class="card-link card-link-primary"', 1)
-
-    link_html = "".join(buttons)
-
-    # Contact hint — simple, one-liner per platform type
-    if platform in ("jobs", "complaints", "craigslist"):
-        if contact_email:
-            contact_hint = '<div class="contact-hint">✉️ Email found — click to send with the pitch pre-filled.</div>'
-        else:
-            contact_hint = '<div class="contact-hint">No email found yet. Try LinkedIn or Facebook DM, or click <em>Find email</em> to search.</div>'
-    elif platform in ("reddit", "reddit_search"):
-        contact_hint = '<div class="contact-hint">Reply publicly first (helpful, not salesy), then DM the author.</div>'
-    elif platform == "hackernews":
-        contact_hint = '<div class="contact-hint">Reply in the HN thread, or click the author\'s username — their profile often lists an email.</div>'
-    elif platform == "bluesky":
-        contact_hint = '<div class="contact-hint">Reply publicly on Bluesky. DMs only work if they follow you back.</div>'
-    elif platform == "forum":
-        contact_hint = '<div class="contact-hint">Reply in the forum thread or PM the user directly.</div>'
-    elif platform == "quora":
-        contact_hint = '<div class="contact-hint">Answer the Quora question — helpful answers rank on Google for years.</div>'
-    else:
-        contact_hint = ""
 
     # For job postings / complaints, show the business name prominently
     role_html = ""
@@ -878,29 +817,91 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
         company_line = f"{community}"
         title_line = title
 
-    # Suggested outreach — use Claude's if available, otherwise generate a
-    # sensible fallback based on lead type. We need a real pitch on EVERY card
-    # so the Copy button always has something to copy.
+    # Pitch text
     pitch_text = lead.get("suggested_reply") or ""
     if not pitch_text:
         pitch_text = _fallback_pitch(lead)
-
-    # The version we display (HTML-escaped) and the version we copy (raw text
-    # held in a hidden textarea so navigator.clipboard.writeText gets the
-    # original characters with newlines intact).
     pitch_display = escape(pitch_text).replace("\n", "<br>")
     lead_id = lead.get("id", 0)
 
-    suggested_html = f"""
+    # ================================================================
+    # DETERMINE THE BEST "SEND MESSAGE" LINK
+    # Priority: email mailto > platform reply > LinkedIn > Facebook > website
+    # ================================================================
+    send_url = ""
+    send_label = ""
+
+    if contact_email:
+        subj = quote_plus(f"Quick question — {company_name}" if company_name else "Quick question")
+        email_body = quote_plus(pitch_text)
+        send_url = f"mailto:{contact_email}?subject={subj}&body={email_body}"
+        send_label = f"✉️ Email {escape(contact_email)}"
+    elif platform in ("reddit", "reddit_search", "hackernews", "bluesky", "forum", "quora") and url and url != "N/A":
+        send_url = escape(url)
+        send_label = "💬 Reply on platform"
+    elif platform in ("jobs", "complaints", "craigslist") and q:
+        send_url = f"https://www.linkedin.com/search/results/companies/?keywords={q}"
+        send_label = "💬 Message on LinkedIn"
+    elif contact_website:
+        send_url = escape(contact_website)
+        send_label = "🌐 Contact via website"
+    elif url and url != "N/A":
+        send_url = escape(url)
+        send_label = "🔗 Open post"
+
+    # ================================================================
+    # SECONDARY LINKS — small text row for alternative contact methods
+    # ================================================================
+    secondary = []
+    if contact_email and platform in ("reddit", "reddit_search", "hackernews", "bluesky", "forum", "quora") and url and url != "N/A":
+        # Primary was email, so show platform reply as secondary
+        secondary.append(f'<a href="{escape(url)}" target="_blank" rel="noopener">Reply on platform</a>')
+    if not contact_email and platform in ("jobs", "complaints", "craigslist") and q:
+        # Primary was LinkedIn, show Facebook as secondary
+        secondary.append(f'<a href="https://www.facebook.com/search/pages/?q={q}" target="_blank" rel="noopener">Facebook</a>')
+    if contact_email and platform in ("jobs", "complaints", "craigslist") and q:
+        # Primary was email, show LinkedIn + Facebook as secondary
+        secondary.append(f'<a href="https://www.linkedin.com/search/results/companies/?keywords={q}" target="_blank" rel="noopener">LinkedIn</a>')
+        secondary.append(f'<a href="https://www.facebook.com/search/pages/?q={q}" target="_blank" rel="noopener">Facebook</a>')
+    if contact_website and send_label != "🌐 Contact via website":
+        secondary.append(f'<a href="{escape(contact_website)}" target="_blank" rel="noopener">Website</a>')
+    if contact_phone:
+        tel_url = f"tel:{re.sub(r'[^0-9+]', '', contact_phone)}"
+        secondary.append(f'<a href="{tel_url}">📞 {escape(contact_phone)}</a>')
+    if platform in ("jobs", "complaints", "craigslist") and q:
+        secondary.append(f'<a href="https://www.google.com/maps/search/?api=1&query={q}" target="_blank" rel="noopener">Maps</a>')
+    if url and url != "N/A" and send_url != escape(url):
+        if platform == "jobs":
+            secondary.append(f'<a href="{escape(url)}" target="_blank" rel="noopener">Job posting</a>')
+        elif platform == "complaints":
+            secondary.append(f'<a href="{escape(url)}" target="_blank" rel="noopener">Review</a>')
+        elif platform == "craigslist":
+            secondary.append(f'<a href="{escape(url)}" target="_blank" rel="noopener">CL post</a>')
+
+    secondary_html = ""
+    if secondary:
+        links = " &middot; ".join(secondary)
+        secondary_html = f'<div class="secondary-links">Also: {links}</div>'
+
+    # ================================================================
+    # BUILD THE TWO-BUTTON ACTION BAR + suggested pitch
+    # ================================================================
+    action_html = f"""
+    <div class="action-bar">
+      <button class="action-btn action-copy" onclick="copyPitch({lead_id}, this)">📋 Copy pitch</button>
+      {'<a class="action-btn action-send" href="' + send_url + '" target="_blank" rel="noopener">' + send_label + '</a>' if send_url else '<span class="action-btn action-send action-disabled">No contact found</span>'}
+      <button class="mark-btn" onclick="toggleContacted({lead_id}, this)">✓ Mark contacted</button>
+    </div>
+    {secondary_html}
     <div class="suggested">
-      <strong>Suggested outreach:</strong><br>
-      {pitch_display}
-      <div class="suggested-row">
-        <button class="copy-btn" onclick="copyPitch({lead_id}, this)">📋 Copy pitch</button>
-        <button class="mark-btn" onclick="toggleContacted({lead_id}, this)">✓ Mark contacted</button>
-      </div>
+      <details>
+        <summary><strong>Preview pitch</strong></summary>
+        <div class="pitch-body">{pitch_display}</div>
+      </details>
       <textarea class="hidden-msg" id="msg-{lead_id}" readonly>{escape(pitch_text)}</textarea>
     </div>"""
+
+    contact_hint = ""
 
     # Summary / reasoning
     body = lead.get("body", "")
@@ -964,8 +965,7 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
       <span>Score: {score:.0%} <span class="score-bar"><span class="score-fill {score_class}" style="width:{score_pct}%"></span></span></span>
       <span>🕐 {time_str}</span>
     </div>
-    <div style="margin-top:10px;">{link_html}</div>
-    {contact_hint}{suggested_html}
+    {action_html}
   </div>"""
 
 
