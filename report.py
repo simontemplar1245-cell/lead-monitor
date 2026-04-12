@@ -728,16 +728,20 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     suggested = escape(lead.get("suggested_reply") or "")
     discovered = lead.get("discovered_at", "")
 
-    # Time ago
+    # Time ago + actual timestamp
     time_str = ""
     try:
         dt = datetime.fromisoformat(str(discovered).replace("Z", "+00:00"))
-        diff = datetime.utcnow() - dt.replace(tzinfo=None)
+        dt_naive = dt.replace(tzinfo=None)
+        diff = datetime.utcnow() - dt_naive
+        # Readable date: "Apr 12, 2026 at 3:45 PM"
+        date_str = dt_naive.strftime("%b %d, %Y at %I:%M %p UTC")
         if diff.days > 0:
-            time_str = f"{diff.days}d ago"
+            time_str = f"{diff.days}d ago &middot; {date_str}"
         else:
             hours = int(diff.total_seconds() / 3600)
-            time_str = f"{hours}h ago" if hours > 0 else "just now"
+            relative = f"{hours}h ago" if hours > 0 else "just now"
+            time_str = f"{relative} &middot; {date_str}"
     except (ValueError, TypeError):
         time_str = ""
 
@@ -958,7 +962,7 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     <div class="card-summary">{summary}</div>
     <div class="card-meta">
       <span>Score: {score:.0%} <span class="score-bar"><span class="score-fill {score_class}" style="width:{score_pct}%"></span></span></span>
-      <span>{time_str}</span>
+      <span>🕐 {time_str}</span>
     </div>
     <div style="margin-top:10px;">{link_html}</div>
     {contact_hint}{suggested_html}
