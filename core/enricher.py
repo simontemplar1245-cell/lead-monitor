@@ -159,8 +159,47 @@ def _enrich_business(lead: dict, result: dict):
     if not company:
         return
 
+    # Step 0: mine the job description / post body FIRST. Indeed/LinkedIn
+    # job postings often contain the company's website URL, email, phone,
+    # or address directly in the text. This is free data — grab it before
+    # doing any network calls.
+    body = (lead.get("body") or "") + " " + (lead.get("full_text") or "")
+    if body.strip():
+        # Extract URLs from the posting — these are often the company site
+        body_urls = URL_RE.findall(body)
+        for u in body_urls:
+            u = u.rstrip(".,)")
+            d = _domain_of(u)
+            if d and d not in BLOCKED_DOMAINS:
+                result["website"] = u
+                # Also try to extract email/phone from this domain later
+                logger.info(f"  found website in job body: {u}")
+                break
+
+        # Extract email directly from the posting
+        body_email = _extract_first_email(body)
+        if body_email:
+            result["email"] = body_email
+            result["_email_source"] = "post_body"
+            logger.info(f"  found email in job body: {body_email}")
+
+        # Extract phone directly from the posting
+        body_phone = _extract_first_phone(body)
+        if body_phone:
+            result["phone"] = body_phone
+            logger.info(f"  found phone in job body: {body_phone}")
+
+    # If we already have email + phone from the posting, we're done
+    if result["email"] and result["phone"]:
+        return
+
     # Step 1: guess the company's domain from their name
-    domain = _guess_domain(company)
+    # (or use the domain from the URL we found in the body)
+    domain = None
+    if result.get("website"):
+        domain = _domain_of(result["website"])
+    if not domain:
+        domain = _guess_domain(company)
     if not domain:
         logger.debug(f"  no live domain found for '{company}'")
         return
