@@ -937,23 +937,35 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
     summary = ""
 
     if platform == "jobs":
-        # Job lead: focus on the BUSINESS, not the role. The user wants to
-        # know what kind of company this is so they can decide if it's worth
-        # pitching an AI receptionist to.
-        biz_snippet = ""
+        # Job lead: extract business details from the job description so
+        # the user can FIND and CONTACT the company outside the job platform
+        # (Indeed/LinkedIn don't allow messaging employers directly).
+        # Pull out: what the business does, location, any URLs/addresses.
+        details = []
         if body:
-            # Job descriptions usually start with a company blurb in the
-            # first 1-2 sentences. Extract that.
-            # Strip common "About us" / "Company description" headers
+            body_lower = body.lower()
+            # Extract any URLs mentioned in the job description
+            import re as _re
+            urls_in_body = _re.findall(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+', body)
+            if urls_in_body:
+                details.append(f"🌐 {urls_in_body[0]}")
+            # Extract location/address hints
+            for pattern in [
+                r'\d{1,5}\s+\w+\s+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Dr|Drive|Way|Lane|Ln|Ct|Court)',
+                r'(?:located in|based in|office in|serving)\s+([^.,:;]{5,50})',
+            ]:
+                loc_match = _re.search(pattern, body, _re.IGNORECASE)
+                if loc_match:
+                    details.append(f"📍 {loc_match.group(0).strip()}")
+                    break
+            # Company blurb — first meaningful sentence about the business
             clean = body.strip()
             for prefix in ("about us", "about the company", "company description",
-                           "who we are", "overview"):
+                           "who we are", "overview", "job description"):
                 if clean.lower().startswith(prefix):
                     clean = clean[len(prefix):].lstrip(":").lstrip("-").strip()
-            # Take the first ~200 chars as the business description
             biz_snippet = clean[:200].strip()
             if len(clean) > 200:
-                # Cut at last sentence boundary if possible
                 for end in (".", "!", ";"):
                     idx = biz_snippet.rfind(end)
                     if idx > 50:
@@ -961,12 +973,12 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
                         break
                 else:
                     biz_snippet += "..."
-        if biz_snippet:
-            summary = escape(biz_snippet)
+            if biz_snippet:
+                details.append(biz_snippet)
+        if details:
+            summary = escape(" — ".join(details))
         else:
-            loc = (lead.get("community") or "").split("(")[-1].rstrip(")").strip() if "(" in (lead.get("community") or "") else ""
-            loc_str = f" in {loc}" if loc else ""
-            summary = escape(f"{company_name}{loc_str} — hiring for a phone/reception role.")
+            summary = escape(f"{company_name} — no business details in posting. Try LinkedIn or Maps to find them.")
     elif platform == "complaints":
         # Complaint lead: show the actual complaint snippet
         snippet = body[:200].strip()
