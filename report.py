@@ -929,13 +929,63 @@ def _render_lead_card(lead: dict, url_status: dict) -> str:
 
     contact_hint = ""
 
-    # Summary / reasoning
-    body = lead.get("body", "")
+    # Summary — a human-readable description of what this lead is.
+    # We generate this from the lead data itself rather than relying on
+    # the classifier's reasoning (which is often generic for auto-promoted leads).
+    body = lead.get("body", "") or ""
+    raw_title = lead.get("title", "") or ""
     summary = ""
-    if reasoning:
-        summary = reasoning
-    elif body:
-        summary = escape(body[:200]) + ("..." if len(body) > 200 else "")
+
+    if platform == "jobs":
+        # Job lead: describe the company + role + why it's relevant
+        role_name = raw_title[:100] if raw_title else "a phone/reception role"
+        loc = (lead.get("community") or "").split("(")[-1].rstrip(")").strip() if "(" in (lead.get("community") or "") else ""
+        loc_str = f" in {loc}" if loc else ""
+        summary = escape(f"{company_name} is hiring for {role_name}{loc_str}. This is a potential AI receptionist replacement opportunity.")
+    elif platform == "complaints":
+        # Complaint lead: show the actual complaint snippet
+        snippet = body[:200].strip()
+        if snippet:
+            summary = escape(f"Customer complaint: \"{snippet}\"") + ("..." if len(body) > 200 else "")
+        else:
+            summary = escape(f"Phone/reachability complaint found for {company_name or 'this business'}.")
+    elif platform == "craigslist":
+        snippet = body[:200].strip()
+        if snippet:
+            summary = escape(snippet) + ("..." if len(body) > 200 else "")
+        else:
+            summary = escape(raw_title[:200])
+    elif platform == "quora":
+        summary = escape(f"Quora question: \"{raw_title[:150]}\"") if raw_title else ""
+    elif platform in ("reddit", "reddit_search"):
+        # Show the actual post body preview
+        snippet = body[:200].strip()
+        if snippet:
+            summary = escape(snippet) + ("..." if len(body) > 200 else "")
+        elif raw_title:
+            summary = escape(raw_title[:200])
+    elif platform == "hackernews":
+        snippet = body[:200].strip()
+        if snippet:
+            summary = escape(snippet) + ("..." if len(body) > 200 else "")
+        else:
+            summary = escape(raw_title[:200])
+    elif platform == "bluesky":
+        snippet = body[:200].strip()
+        if snippet:
+            summary = escape(snippet) + ("..." if len(body) > 200 else "")
+    elif platform == "forum":
+        snippet = body[:200].strip()
+        if snippet:
+            summary = escape(snippet) + ("..." if len(body) > 200 else "")
+        elif raw_title:
+            summary = escape(raw_title[:200])
+    else:
+        # Fallback: use reasoning if we have it, otherwise body
+        if reasoning and "auto-promoted" not in reasoning.lower():
+            summary = reasoning
+        elif body:
+            summary = escape(body[:200]) + ("..." if len(body) > 200 else "")
 
     # ================================================================
     # SOURCE LABEL — ONE clear, specific label per lead.
